@@ -212,16 +212,20 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
                       {fila.participanteNombre}
                     </th>
                     {data.diasLabels.map((dia) => {
-                      const deber = fila.dias[dia.clave];
+                      const deberesDelDia = fila.dias[dia.clave];
                       return (
                         <td
                           key={dia.clave}
-                          className="px-2 py-3 text-center"
+                          className="px-2 py-3 text-center align-top"
                         >
-                          {deber ? (
-                            <span className="inline-block rounded-[8px] bg-[#faf5eb] px-2 py-1 text-[11.5px] font-semibold text-[#5a4d40]">
-                              {abreviarDeber(deber)}
-                            </span>
+                          {deberesDelDia && deberesDelDia.length > 0 ? (
+                            <div className="flex flex-col gap-1 items-center">
+                              {deberesDelDia.map((deber, idx) => (
+                                <span key={idx} className="inline-block rounded-[8px] bg-[#faf5eb] px-2 py-1 text-[11.5px] font-semibold text-[#5a4d40]">
+                                  {abreviarDeber(deber)}
+                                </span>
+                              ))}
+                            </div>
                           ) : (
                             <span className="text-[11px] text-[#d4c5ad]">
                               —

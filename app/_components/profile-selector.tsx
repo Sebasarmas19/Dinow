@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { PerfilParticipante } from "../../lib/home/profile.service";
 
 // ── Tipos ───────────────────────────────────────────────────────────────────
@@ -151,14 +152,10 @@ function EstadoConUsuarios({
           const isLoading = loadingUser === user.id;
           const isOtherLoading = loadingUser !== null && !isLoading;
           return (
-            <button
+            <Link
               key={user.id}
-              type="button"
-              disabled={loadingUser !== null}
-              onClick={() => {
-                setLoadingUser(user.id);
-                router.push(`/${encodeURIComponent(user.nombre.toLowerCase())}`);
-              }}
+              href={`/${encodeURIComponent(user.nombre.toLowerCase())}`}
+              onClick={() => setLoadingUser(user.id)}
               className={`group flex flex-col items-center gap-3 outline-none transition-opacity duration-200 ${isOtherLoading ? "opacity-40 pointer-events-none" : ""}`}
               aria-label={`Entrar como ${user.nombre}`}
             >
@@ -201,7 +198,7 @@ function EstadoConUsuarios({
                   aria-label="Cargando"
                 />
               )}
-            </button>
+            </Link>
           );
         })}
       </div>

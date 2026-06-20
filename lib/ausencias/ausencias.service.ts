@@ -1,6 +1,6 @@
 import { obtenerHogarActualId } from "@/lib/hogar/hogar.service";
 import { obtenerParticipante } from "@/lib/participantes/participantes.repo";
-import { generarAsignacionesParaFecha } from "@/lib/rotacion/rotacion.service";
+import { generarAsignacionesPorFecha } from "@/lib/rotacion/rotacion.service";
 import {
   formatearFechaISO,
   obtenerFechaDeNegocio,
@@ -47,7 +47,7 @@ async function regenerarPlan(inicioStr: string, finStr: string): Promise<void> {
   let fecha = parsearFechaISO(desdeStr);
   const fin = parsearFechaISO(finStr);
   while (fecha <= fin) {
-    await generarAsignacionesParaFecha(fecha, { sobrescribir: true });
+    await generarAsignacionesPorFecha(fecha, { sobrescribir: true });
     fecha = sumarDias(fecha, 1);
   }
 }

@@ -5,6 +5,7 @@ import {
   deberes,
   hogar,
   participantes,
+  planSemanal as planSemanalTable,
 } from "../db/schema";
 import {
   formatearFechaISO,
@@ -23,21 +24,17 @@ export type ParticipanteResumen = {
 
 export type PlanSemanalFila = {
   participanteNombre: string;
-  /** Mapa de día ("lun", "mar", ...) → nombre del deber asignado o null. */
-  dias: Record<string, string | null>;
+  /** Mapa de día ("lun", "mar", ...) → array de nombres de deberes asignados. */
+  dias: Record<string, string[]>;
 };
 
 export type AdminDashboardData = {
   nombreHogar: string;
   participantes: ParticipanteResumen[];
   planSemanal: PlanSemanalFila[];
-  /** Etiquetas cortas de los días de la semana que se muestran. */
-  diasLabels: { clave: string; label: string }[];
+  diasLabels: { clave: string; label: string; idx: number }[];
 };
 
-/**
- * Obtiene todos los datos necesarios para renderizar el dashboard del Admin.
- */
 export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   // 1. Obtener hogar
   const [hogarActual] = await db.select().from(hogar).limit(1);
@@ -55,61 +52,40 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     )
     .orderBy(asc(participantes.ordenRotacion));
 
-  // 3. Calcular el rango de la semana actual (lunes a domingo)
-  const hoy = obtenerFechaDeNegocio();
-  const diaSemana = hoy.getDay(); // 0=domingo
-  const diasDesdeLunes = (diaSemana + 6) % 7;
-  const lunes = sumarDias(hoy, -diasDesdeLunes);
-  const domingo = sumarDias(lunes, 6);
-
-  // 4. Obtener TODAS las asignaciones de esta semana
-  const asignacionesSemana = await db
+  // 3. Obtener la plantilla (plan semanal)
+  const plantillaSemana = await db
     .select({
-      fecha: asignaciones.fecha,
-      participanteId: asignaciones.participanteId,
+      diaSemana: planSemanalTable.diaSemana,
+      participanteId: planSemanalTable.participanteId,
       deberNombre: deberes.nombre,
     })
-    .from(asignaciones)
-    .innerJoin(deberes, eq(asignaciones.deberId, deberes.id))
-    .where(
-      and(
-        eq(asignaciones.hogarId, hogarActual.id),
-        gte(asignaciones.fecha, formatearFechaISO(lunes)),
-        lte(asignaciones.fecha, formatearFechaISO(domingo)),
-      ),
-    );
+    .from(planSemanalTable)
+    .innerJoin(deberes, eq(planSemanalTable.deberId, deberes.id))
+    .where(eq(planSemanalTable.hogarId, hogarActual.id));
 
-  // 5. Construir las etiquetas de los 7 días
+  // 4. Construir las etiquetas de los 7 días (0 = Domingo)
   const diasLabels = [
-    { clave: "lun", label: "Lun" },
-    { clave: "mar", label: "Mar" },
-    { clave: "mie", label: "Mié" },
-    { clave: "jue", label: "Jue" },
-    { clave: "vie", label: "Vie" },
-    { clave: "sab", label: "Sáb" },
-    { clave: "dom", label: "Dom" },
+    { clave: "lun", label: "Lun", idx: 1 },
+    { clave: "mar", label: "Mar", idx: 2 },
+    { clave: "mie", label: "Mié", idx: 3 },
+    { clave: "jue", label: "Jue", idx: 4 },
+    { clave: "vie", label: "Vie", idx: 5 },
+    { clave: "sab", label: "Sáb", idx: 6 },
+    { clave: "dom", label: "Dom", idx: 0 },
   ];
 
-  // Mapa de fecha ISO → clave del día
-  const fechaAClave = new Map<string, string>();
-  for (let i = 0; i < 7; i++) {
-    const fecha = sumarDias(lunes, i);
-    fechaAClave.set(formatearFechaISO(fecha), diasLabels[i].clave);
-  }
-
-  // 6. Armar la tabla: una fila por participante, con las asignaciones por día
+  // 5. Armar la tabla: una fila por participante
   const planSemanal: PlanSemanalFila[] = activos.map((p) => {
-    const dias: Record<string, string | null> = {};
+    const dias: Record<string, string[]> = {};
     for (const d of diasLabels) {
-      dias[d.clave] = null;
+      dias[d.clave] = [];
     }
 
-    // Llenar con las asignaciones reales
-    for (const a of asignacionesSemana) {
+    for (const a of plantillaSemana) {
       if (a.participanteId === p.id) {
-        const clave = fechaAClave.get(a.fecha);
-        if (clave) {
-          dias[clave] = a.deberNombre;
+        const diaTarget = diasLabels.find(d => d.idx === a.diaSemana);
+        if (diaTarget) {
+          dias[diaTarget.clave].push(a.deberNombre);
         }
       }
     }

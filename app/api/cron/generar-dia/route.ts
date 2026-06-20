@@ -3,7 +3,7 @@ import {
   evaluarLogrosTodos,
   otorgarTitulosDelMes,
 } from "@/lib/logros/logros.service";
-import { generarAsignacionesDeHoy } from "@/lib/rotacion/rotacion.service";
+import { generarAsignacionesPorFecha } from "@/lib/rotacion/rotacion.service";
 import {
   formatearFechaISO,
   obtenerFechaDeNegocio,
@@ -55,7 +55,7 @@ export async function GET(request: Request) {
     }
 
     // 4. Generar las asignaciones de hoy.
-    const asignaciones = await generarAsignacionesDeHoy();
+    const asignaciones = await generarAsignacionesPorFecha(hoy);
 
     return Response.json({
       ok: true,
