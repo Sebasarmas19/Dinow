@@ -3,6 +3,7 @@ import {
   type EntradaAuditoria,
   insertarAuditoria,
   listarAuditoriaDeHogar,
+  listarHistorialUsuarios,
 } from "./auditoria.repo";
 
 /**
@@ -31,8 +32,18 @@ export async function registrarAccion(input: {
   });
 }
 
-/** Lista el registro de auditoría del hogar actual (para mostrarlo a los tres). */
-export async function listarAuditoria() {
+/** Lista el registro de auditoría del hogar actual (últimos 14 días). */
+export async function listarAuditoriaReciente() {
   const hogarId = await obtenerHogarActualId();
-  return listarAuditoriaDeHogar(hogarId);
+  const hace14Dias = new Date();
+  hace14Dias.setDate(hace14Dias.getDate() - 14);
+  return listarAuditoriaDeHogar(hogarId, hace14Dias);
+}
+
+/** Historial combinado de transacciones de puntos y registros de la casa (últimos 14 días). */
+export async function listarHistorialUsuariosReciente() {
+  const hogarId = await obtenerHogarActualId();
+  const hace14Dias = new Date();
+  hace14Dias.setDate(hace14Dias.getDate() - 14);
+  return listarHistorialUsuarios(hogarId, hace14Dias);
 }

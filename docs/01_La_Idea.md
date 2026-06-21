@@ -13,6 +13,8 @@ puntos y rankings que motivan a ayudar.
 reclamables, opcionales), sus propios participantes, sus propios valores de 
 puntos. No está cableada para un caso específico.
 
+> **Nota sobre el Administrador:** "El Admin" no es una persona específica ni un perfil exclusivo. Es una cuenta o panel compartido al que **cualquiera de los integrantes del hogar puede entrar** si conoce la contraseña maestra. Todas las acciones realizadas desde este panel quedan registradas públicamente en la bitácora de auditoría para garantizar transparencia.
+
 **Ejemplo concreto (caso de uso):** Samuel (24) y sus dos hermanos comparten 
 casa en Caracas. Tienen 3 deberes principales que rotan (Sofi el perro, 
 cocinar, lavar platos), extras de la semana, y extras personales 

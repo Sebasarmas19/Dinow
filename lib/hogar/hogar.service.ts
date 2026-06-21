@@ -2,6 +2,7 @@ import {
   type Hogar,
   insertarHogar,
   obtenerPrimerHogar,
+  actualizarHogar,
 } from "./hogar.repo";
 
 /**
@@ -13,6 +14,15 @@ import {
 export type CrearHogarInput = {
   nombre: string;
   claveAdmin: string;
+};
+
+export type EditarHogarInput = {
+  nombre?: string;
+  horaCierreDia?: string;
+  claveAdmin?: string;
+  bonoAyuda?: string;
+  penalizacionFallo?: string;
+  penalizacionColectiva?: string;
 };
 
 /**
@@ -55,4 +65,49 @@ export async function crearHogar(input: CrearHogarInput): Promise<Hogar> {
   }
 
   return insertarHogar({ nombre, claveAdmin: input.claveAdmin });
+}
+
+export async function editarHogar(id: string, input: EditarHogarInput): Promise<Hogar> {
+  const existente = await obtenerPrimerHogar();
+  if (!existente || existente.id !== id) {
+    throw new Error("El hogar especificado no existe.");
+  }
+
+  const cambios: Partial<Hogar> = {};
+
+  if (input.nombre !== undefined) {
+    const n = input.nombre.trim();
+    if (!n) throw new Error("El nombre no puede quedar vacío.");
+    cambios.nombre = n;
+  }
+  if (input.horaCierreDia !== undefined) {
+    if (!/^\d{2}:\d{2}(:\d{2})?$/.test(input.horaCierreDia)) {
+      throw new Error("La hora de cierre debe tener el formato HH:MM.");
+    }
+    cambios.horaCierreDia = input.horaCierreDia;
+  }
+  if (input.claveAdmin !== undefined) {
+    const c = input.claveAdmin.trim();
+    if (!c) throw new Error("La clave del admin no puede estar vacía.");
+    cambios.claveAdmin = c;
+  }
+  if (input.bonoAyuda !== undefined) {
+    const b = Number(input.bonoAyuda);
+    if (isNaN(b) || b < 0) throw new Error("El bono de ayuda debe ser un número positivo.");
+    cambios.bonoAyuda = String(b);
+  }
+  if (input.penalizacionFallo !== undefined) {
+    const p = Number(input.penalizacionFallo);
+    if (isNaN(p) || p < 0) throw new Error("La penalización por fallo debe ser un número positivo.");
+    cambios.penalizacionFallo = String(p);
+  }
+  if (input.penalizacionColectiva !== undefined) {
+    const p = Number(input.penalizacionColectiva);
+    if (isNaN(p) || p < 0) throw new Error("La penalización colectiva debe ser un número positivo.");
+    cambios.penalizacionColectiva = String(p);
+  }
+
+  const actualizado = await actualizarHogar(id, cambios);
+  if (!actualizado) throw new Error("No se pudo actualizar el hogar.");
+  return actualizado;
 }

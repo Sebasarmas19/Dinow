@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { PerfilParticipante } from "../../lib/home/profile.service";
@@ -122,6 +122,7 @@ function EstadoConUsuarios({
   // Todos los participantes son usuarios normales.
   // "Admin" es un perfil fijo del sistema, no un participante.
 
+  const [isPending, startTransition] = useTransition();
   const [loadingUser, setLoadingUser] = useState<string | null>(null);
 
   // Colores para cada círculo de usuario (se asignan en orden)
@@ -152,10 +153,14 @@ function EstadoConUsuarios({
           const isLoading = loadingUser === user.id;
           const isOtherLoading = loadingUser !== null && !isLoading;
           return (
-            <Link
+            <button
               key={user.id}
-              href={`/${encodeURIComponent(user.nombre.toLowerCase())}`}
-              onClick={() => setLoadingUser(user.id)}
+              onClick={() => {
+                setLoadingUser(user.id);
+                startTransition(() => {
+                  router.push(`/${encodeURIComponent(user.nombre.toLowerCase())}`);
+                });
+              }}
               className={`group flex flex-col items-center gap-3 outline-none transition-opacity duration-200 ${isOtherLoading ? "opacity-40 pointer-events-none" : ""}`}
               aria-label={`Entrar como ${user.nombre}`}
             >
@@ -198,7 +203,7 @@ function EstadoConUsuarios({
                   aria-label="Cargando"
                 />
               )}
-            </Link>
+            </button>
           );
         })}
       </div>

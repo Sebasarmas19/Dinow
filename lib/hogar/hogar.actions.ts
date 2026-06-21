@@ -8,7 +8,8 @@ import {
   type Resultado,
 } from "@/lib/shared/resultado";
 import { type Hogar } from "./hogar.repo";
-import { crearHogar } from "./hogar.service";
+import { crearHogar, editarHogar } from "./hogar.service";
+import { registrarAccion } from "@/lib/auditoria/auditoria.service";
 
 /**
  * Server actions del hogar: el punto de entrada desde la UI (como controllers).
@@ -51,6 +52,42 @@ export async function setupInicialAction(
     revalidatePath("/", "layout");
 
     return exito(undefined);
+  } catch (e) {
+    return fallo(mensajeDeError(e));
+  }
+}
+
+export async function actualizarConfiguracionHogarAction(
+  formData: FormData,
+): Promise<Resultado<Hogar>> {
+  try {
+    const hogarId = String(formData.get("hogarId") ?? "").trim();
+    const adminId = String(formData.get("adminId") ?? "").trim();
+
+    if (!hogarId || !adminId) {
+      throw new Error("Faltan parámetros de seguridad (hogarId, adminId).");
+    }
+
+    const input = {
+      nombre: String(formData.get("nombre") ?? "").trim(),
+      horaCierreDia: String(formData.get("horaCierreDia") ?? "").trim(),
+      claveAdmin: String(formData.get("claveAdmin") ?? "").trim(),
+      bonoAyuda: String(formData.get("bonoAyuda") ?? "").trim(),
+      penalizacionFallo: String(formData.get("penalizacionFallo") ?? "").trim(),
+      penalizacionColectiva: String(formData.get("penalizacionColectiva") ?? "").trim(),
+    };
+
+    const actualizado = await editarHogar(hogarId, input);
+
+    // Guardar en la auditoría
+    await registrarAccion({
+      adminId,
+      accion: "editar_configuracion",
+      detalle: { ...input },
+    });
+
+    revalidatePath("/", "layout");
+    return exito(actualizado);
   } catch (e) {
     return fallo(mensajeDeError(e));
   }
