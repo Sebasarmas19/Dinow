@@ -117,9 +117,6 @@ export async function getHomeScreenData(usuarioNombre?: string): Promise<HomeScr
     // Si es "Yo", armar Mis Deberes
     if (esYo) {
       for (const item of misRotativos) {
-        const emoji = item.deber.nombre.toLowerCase().includes("platos")
-          ? "🍽️"
-          : item.deber.nombre.toLowerCase().includes("cocinar")
         misDeberes.push({
           id: item.deber.id,
           nombre: item.deber.nombre,
