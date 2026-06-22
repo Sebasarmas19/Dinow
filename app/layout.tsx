@@ -18,8 +18,14 @@ const hanken = Hanken_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Deberes de la Casa",
+  title: "Dinow",
   description: "Organiza, recuerda y registra los deberes del hogar.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Dinow",
+  }
 };
 
 // El color de la barra del navegador/PWA coincide con el fondo crema.
