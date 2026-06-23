@@ -1,0 +1,17 @@
+name: Recordatorio (Cron)
+
+on:
+  schedule:
+    # Ejecuta a las 10:00, 18:00 y 23:00 UTC
+    # Equivale a 6:00 AM, 2:00 PM y 7:00 PM Hora de Caracas
+    - cron: '0 10,18,23 * * *'
+  workflow_dispatch:
+
+jobs:
+  run-cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Recordatorio API
+        run: |
+          curl -X GET "https://dinow-ashy.vercel.app/api/cron/recordatorio" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

@@ -1,0 +1,16 @@
+name: Generar Día (Cron)
+
+on:
+  schedule:
+    # Ejecuta a las 07:00 UTC (3:00 AM Hora de Caracas)
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+jobs:
+  run-cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Generar Día API
+        run: |
+          curl -X GET "https://dinow-ashy.vercel.app/api/cron/generar-dia" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
