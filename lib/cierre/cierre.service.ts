@@ -102,6 +102,7 @@ export async function cerrarDia(
     // (2) Nadie lo hizo y es no negociable → penalización colectiva a los tres.
     if (deber.esObligatorio && !fueCubierto) {
       for (const p of participantesActivos) {
+        if (ausentes.has(p.id)) continue; // Los ausentes con razón válida están protegidos
         await otorgarPenalizacionColectiva(
           hogarId,
           p.id,

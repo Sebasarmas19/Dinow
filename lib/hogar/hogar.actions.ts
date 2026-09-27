@@ -49,6 +49,13 @@ export async function setupInicialAction(
     const { setupInicialHogar } = await import("./setup.service");
     await setupInicialHogar(data);
 
+    // Iniciar sesión automáticamente como Admin para entrar directo al panel
+    const { loginAdmin } = await import("@/lib/auth/auth.service");
+    const rawClave = String(formData.get("claveAdmin") ?? "");
+    if (rawClave) {
+      await loginAdmin(rawClave);
+    }
+
     // Refrescar toda la app porque cambió el estado global
     revalidatePath("/", "layout");
 

@@ -26,6 +26,10 @@ export async function guardarPlanSemanalAction(
 
     await reemplazarPlanSemanal(hogarId, entradas);
 
+    const { generarAsignacionesPorFecha } = await import("./rotacion.service");
+    const { obtenerFechaDeNegocio } = await import("@/lib/shared/date");
+    await generarAsignacionesPorFecha(obtenerFechaDeNegocio(), { sobrescribir: true });
+
     revalidatePath("/", "layout");
     return { ok: true };
   } catch (error: any) {
