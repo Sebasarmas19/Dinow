@@ -30,6 +30,18 @@ export async function guardarPlanSemanalAction(
     const { obtenerFechaDeNegocio } = await import("@/lib/shared/date");
     await generarAsignacionesPorFecha(obtenerFechaDeNegocio(), { sobrescribir: true });
 
+    const { listarParticipantes } = await import("@/lib/participantes/participantes.repo");
+    const { registrarAccion } = await import("@/lib/auditoria/auditoria.service");
+    const parts = await listarParticipantes(hogarId);
+    const admin = parts.find((p) => p.esAdmin);
+    if (admin) {
+      await registrarAccion({
+        adminId: admin.id,
+        accion: "actualizar_plan_semanal",
+        detalle: { totalAsignaciones: entradas.length },
+      });
+    }
+
     revalidatePath("/", "layout");
     return { ok: true };
   } catch (error: any) {

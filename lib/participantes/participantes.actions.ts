@@ -71,6 +71,11 @@ export async function editarParticipanteAction(
 export async function updateFotoPerfilAction(id: string, fotoUrl: string | null): Promise<Resultado<Participante>> {
   try {
     if (!id) throw new Error("Falta el id del participante.");
+
+    const sesion = await verificarSesionActual();
+    if (!sesion || (sesion.rol !== "admin" && sesion.participanteId !== id)) {
+      return fallo("No autorizado para modificar esta foto de perfil.");
+    }
     
     // We only update the fotoUrl, keeping everything else the same.
     // However, `editarParticipante` requires `nombre` and `esAdmin`.

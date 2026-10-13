@@ -32,6 +32,7 @@ export type FilaRanking = {
 export type Rankings = {
   mes: string; // 'YYYY-MM'
   general: FilaRanking[];
+  confiable: FilaRanking[];
   solidario: FilaRanking[];
   responsable: FilaRanking[];
 };
@@ -86,6 +87,7 @@ export async function calcularRankings(mes?: string): Promise<Rankings> {
     );
 
   const general: Omit<FilaRanking, "posicion">[] = [];
+  const confiable: Omit<FilaRanking, "posicion">[] = [];
   const solidario: Omit<FilaRanking, "posicion">[] = [];
   const responsable: Omit<FilaRanking, "posicion">[] = [];
 
@@ -94,6 +96,22 @@ export async function calcularRankings(mes?: string): Promise<Rankings> {
 
     // General: suma de TODAS sus transacciones.
     const total = susTx.reduce((s, t) => s + Number(t.cantidad), 0);
+
+    // Confiable: % de cumplimiento en deberes asignados (descontando ausencias).
+    const susAsignacionesValidas = asignaciones.filter(
+      (a) => a.participanteId === p.id && !estabaAusente(p.id, a.fecha)
+    );
+    const totalAsignadas = susAsignacionesValidas.length;
+    const cumplidas = susAsignacionesValidas.filter((a) =>
+      registros.some(
+        (r) =>
+          r.estado === "cumplido_propio" &&
+          r.participanteId === p.id &&
+          r.deberId === a.deberId &&
+          r.fecha === a.fecha
+      )
+    ).length;
+    const porcentaje = totalAsignadas > 0 ? Math.round((cumplidas / totalAsignadas) * 100) : 100;
 
     // Solidario: solo lo ganado ayudando.
     const puntosAyuda = susTx
@@ -106,6 +124,13 @@ export async function calcularRankings(mes?: string): Promise<Rankings> {
       .reduce((s, t) => s + Number(t.cantidad), 0);
 
     general.push({ participanteId: p.id, nombre: p.nombre, fotoUrl: p.fotoUrl, valor: total });
+    confiable.push({
+      participanteId: p.id,
+      nombre: p.nombre,
+      fotoUrl: p.fotoUrl,
+      valor: porcentaje,
+      detalle: `${cumplidas}/${totalAsignadas} cumplidos`,
+    });
     solidario.push({ participanteId: p.id, nombre: p.nombre, fotoUrl: p.fotoUrl, valor: puntosAyuda });
     responsable.push({ participanteId: p.id, nombre: p.nombre, fotoUrl: p.fotoUrl, valor: puntosExtras });
   }
@@ -113,6 +138,7 @@ export async function calcularRankings(mes?: string): Promise<Rankings> {
   return {
     mes: mesStr,
     general: clasificar(general),
+    confiable: clasificar(confiable),
     solidario: clasificar(solidario),
     responsable: clasificar(responsable),
   };
@@ -120,6 +146,7 @@ export async function calcularRankings(mes?: string): Promise<Rankings> {
 
 export type PosicionesParticipante = {
   general: number;
+  confiable: number;
   solidario: number;
   responsable: number;
 };
@@ -133,6 +160,7 @@ export async function obtenerPosiciones(
     filas.find((f) => f.participanteId === participanteId)?.posicion ?? 0;
   return {
     general: buscar(r.general),
+    confiable: buscar(r.confiable),
     solidario: buscar(r.solidario),
     responsable: buscar(r.responsable),
   };

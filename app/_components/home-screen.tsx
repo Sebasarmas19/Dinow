@@ -632,14 +632,9 @@ function DeberPropioCard({
             </span>
           </div>
           <div className="px-5 py-3">
-            <button
-              type="button"
-              onClick={onDeshacer}
-              className="flex w-full items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-[#dccdb4] bg-transparent p-[12px] text-[13.5px] font-bold text-[#9a8c7c] transition-colors hover:bg-[#f4ecdd] active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta"
-            >
-              ✓ Cumplido hoy ·{" "}
-              <span className="underline underline-offset-2">deshacer</span>
-            </button>
+            <div className="flex w-full items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-[#d6e9ce] bg-[#f0fdf4] p-[12px] text-[13.5px] font-bold text-[#166534]">
+              ✓ Cumplido hoy
+            </div>
           </div>
         </>
       ) : (
@@ -1051,7 +1046,7 @@ function DetalleDeberModal({
             onClick={puedeConfirmar ? () => onConfirmar(fotoUrl || undefined, nota || undefined) : undefined}
             disabled={!puedeConfirmar || isSubmitting}
             aria-disabled={!puedeConfirmar || isSubmitting}
-            className="mt-5 flex w-full items-center justify-center gap-2.5 rounded-[16px] p-[16px] font-display text-[17px] font-bold tracking-[-0.01em] text-white transition-colors disabled:cursor-wait disabled:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta"
+            className={`mt-5 flex w-full items-center justify-center gap-2.5 rounded-[16px] p-[16px] font-display text-[17px] font-bold tracking-[-0.01em] text-white transition-colors disabled:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta ${isSubmitting ? "cursor-wait" : "disabled:cursor-not-allowed"}`}
             style={{
               background: puedeConfirmar
                 ? "linear-gradient(180deg,#E2733F,#D2602F)"

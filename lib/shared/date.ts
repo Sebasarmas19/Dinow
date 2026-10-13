@@ -140,12 +140,13 @@ export function rangoPeriodo(
 /**
  * Formatea una fecha a string en español (ej. "Lunes 15 de junio").
  */
-export function formatearFechaLabel(fecha: Date = new Date()): string {
-  const fechaNegocio = obtenerFechaDeNegocio(fecha);
+export function formatearFechaLabel(fecha?: Date): string {
+  const fechaFinal = fecha ? fecha : obtenerFechaDeNegocio();
   const texto = new Intl.DateTimeFormat("es-VE", {
     weekday: "long",
     day: "numeric",
     month: "long",
-  }).format(fechaNegocio);
+    timeZone: "America/Caracas",
+  }).format(fechaFinal);
   return texto.charAt(0).toUpperCase() + texto.slice(1);
 }

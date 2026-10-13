@@ -117,20 +117,32 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
     // Si es "Yo", armar Mis Deberes
     if (esYo) {
       for (const item of misRotativos) {
+        const itemCumplido = registrosHoy.some(
+          (r) =>
+            r.estado === "cumplido_propio" &&
+            r.participanteId === part.id &&
+            r.deberId === item.deber.id
+        );
+        const itemCobertura = registrosHoy.find(
+          (r) =>
+            r.estado === "cubrio_a_otro" &&
+            r.cubiertoA === part.id &&
+            r.deberId === item.deber.id
+        );
         misDeberes.push({
           id: item.deber.id,
           nombre: item.deber.nombre,
           icono: item.deber.icono || "✨",
           puntos: Number(item.deber.puntos),
           criterios: item.criterios,
-          cumplido: estaCumplido, // Warning: if there are multiple chores, this boolean needs to be per chore!
-          cubiertoPor: coberturaHaciaMi
+          cumplido: itemCumplido,
+          cubiertoPor: itemCobertura
             ? {
-                registroId: coberturaHaciaMi.id,
-                nombreId: coberturaHaciaMi.participanteId,
+                registroId: itemCobertura.id,
+                nombreId: itemCobertura.participanteId,
                 nombre:
                   participantesActivos.find(
-                    (p) => p.id === coberturaHaciaMi.participanteId
+                    (p) => p.id === itemCobertura.participanteId
                   )?.nombre || "Alguien",
               }
             : undefined,

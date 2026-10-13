@@ -34,7 +34,10 @@ export function compararClave(textoPlano: string, hashGuardado: string): boolean
   if (!hashGuardado || !hashGuardado.includes(":")) return false;
   const [salt, key] = hashGuardado.split(":");
   const derivedKey = crypto.scryptSync(textoPlano, salt, 64).toString("hex");
-  return key === derivedKey;
+  const keyBuf = Buffer.from(key, "hex");
+  const derivedBuf = Buffer.from(derivedKey, "hex");
+  if (keyBuf.length !== derivedBuf.length) return false;
+  return crypto.timingSafeEqual(keyBuf, derivedBuf);
 }
 
 // ── MANEJO DE SESIONES ──────────────────────────────────────────────────────
@@ -55,7 +58,7 @@ async function crearYGuardarSesion(datos: SesionUsuario): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.set(COOKIE_NAME, sessionId, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production" && process.env.VERCEL === "1",
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
     maxAge: SESSION_MAX_AGE / 1000,

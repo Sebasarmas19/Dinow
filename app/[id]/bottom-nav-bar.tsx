@@ -101,7 +101,7 @@ export function BottomNavBar({ usuario }: Props) {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 mx-auto w-full max-w-[420px] bg-crema-card border-t border-[#f0e6d5] px-6 py-3 shadow-md">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 mx-auto w-full max-w-[420px] bg-crema-card border-t border-[#f0e6d5] px-6 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] shadow-md">
       <div className="flex justify-between items-center">
         {navItems.map((item) => {
           const active = isActive(item.href);

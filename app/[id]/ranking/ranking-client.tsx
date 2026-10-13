@@ -9,17 +9,17 @@ type Props = {
 
 export function RankingClient({ rankings }: Props) {
   const [tab, setTab] = useState<
-    "general" | "solidario" | "responsable"
+    "general" | "confiable" | "solidario" | "responsable"
   >("general");
 
   const rankData = rankings[tab] || [];
 
   const renderValue = (p: FilaRanking) => {
-    return `${p.valor} pts`;
+    return tab === "confiable" ? `${p.valor}%` : `${p.valor} pts`;
   };
 
   const renderTableValue = (p: FilaRanking) => {
-    return `${p.valor} pts`;
+    return tab === "confiable" ? `${p.valor}%` : `${p.valor} pts`;
   };
 
   // Top 3 participantes para el podio
@@ -33,9 +33,9 @@ export function RankingClient({ rankings }: Props) {
       <div
         role="tablist"
         aria-label="Rankings del mes"
-        className="grid grid-cols-3 bg-[#f0e6d5] p-1 rounded-2xl gap-1"
+        className="grid grid-cols-4 bg-[#f0e6d5] p-1 rounded-2xl gap-1"
       >
-        {(["general", "solidario", "responsable"] as const).map(
+        {(["general", "confiable", "solidario", "responsable"] as const).map(
           (t) => {
             const isActive = tab === t;
             return (
@@ -44,7 +44,7 @@ export function RankingClient({ rankings }: Props) {
                 role="tab"
                 aria-selected={isActive}
                 onClick={() => setTab(t)}
-                className={`py-2.5 px-0.5 text-center font-display text-[12px] font-bold rounded-xl transition-all duration-200 capitalize outline-none ${
+                className={`py-2 px-0.5 text-center font-display text-[11px] font-bold rounded-xl transition-all duration-200 capitalize outline-none ${
                   isActive
                     ? "bg-[#fffdf9] text-tinta shadow-sm"
                     : "text-[#a0907c] hover:text-tinta hover:bg-[#faf5eb]/50"
@@ -60,6 +60,7 @@ export function RankingClient({ rankings }: Props) {
       {/* Explicación rápida de la pestaña seleccionada */}
       <p className="text-[12px] font-medium text-[#9a8c7c] text-center -mt-2">
         {tab === "general" && "🏆 Total de puntos acumulados en el mes"}
+        {tab === "confiable" && "🎯 % de cumplimiento de deberes asignados"}
         {tab === "solidario" && "🤝 Puntos ganados ayudando a otros"}
         {tab === "responsable" && "🌟 Puntos acumulados en extras reclamables"}
       </p>
@@ -187,9 +188,16 @@ export function RankingClient({ rankings }: Props) {
                     {row.nombre}
                   </span>
                 </div>
-                <span className="font-display text-[14px] font-extrabold text-terracota">
-                  {renderTableValue(row)}
-                </span>
+                <div className="flex flex-col items-end">
+                  <span className="font-display text-[14px] font-extrabold text-terracota">
+                    {renderTableValue(row)}
+                  </span>
+                  {tab === "confiable" && row.detalle && (
+                    <span className="text-[10px] text-[#a0907c] font-medium">
+                      {row.detalle}
+                    </span>
+                  )}
+                </div>
               </div>
             ))}
           </div>
