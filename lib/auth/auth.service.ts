@@ -62,6 +62,7 @@ async function crearYGuardarSesion(datos: SesionUsuario): Promise<void> {
     sameSite: "lax",
     path: "/",
     maxAge: SESSION_MAX_AGE / 1000,
+    expires: expiraEn,
   });
 }
 

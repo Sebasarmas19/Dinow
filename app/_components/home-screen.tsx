@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useTransition } from "react";
+import Link from "next/link";
 import { marcarCumplidoAction, cubrirDeberAction, reclamarExtraAction, confirmarCoberturaAction } from "@/lib/cumplimiento/cumplimiento.actions";
 import { supabase } from "@/lib/db/supabase";
 import toast from "react-hot-toast";
@@ -257,9 +258,17 @@ export function HomeScreen({
       >
         {/* Saludo + fecha */}
         <header className="px-0.5 pb-4 pt-2">
-          <p className="text-[11.5px] font-bold uppercase tracking-[0.16em] text-[#b19a80]">
-            {dateLabel}
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-[11.5px] font-bold uppercase tracking-[0.16em] text-[#b19a80]">
+              {dateLabel}
+            </p>
+            <Link
+              href="/?cambiar=1"
+              className="text-[11px] font-semibold text-[#a88c5a] hover:text-terracota bg-[#f8f1e5] px-2.5 py-1 rounded-full transition-colors active:scale-95 border border-[#e6d9c4]"
+            >
+              Cambiar perfil
+            </Link>
+          </div>
           <h1 className="mt-[5px] text-balance font-display text-[26px] font-extrabold leading-[1.05] tracking-[-0.02em]">
             Buenas, {userName}{" "}
             <span aria-hidden="true" className="font-sans">
