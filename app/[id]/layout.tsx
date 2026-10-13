@@ -29,7 +29,7 @@ export default async function UsuarioLayout({ children, params }: Props) {
   }
 
   return (
-    <div className="mx-auto min-h-dvh max-w-[420px] pb-24 relative bg-crema">
+    <div className="mx-auto min-h-screen max-w-[420px] pb-28 bg-crema">
       {children}
       <BottomNavBar usuario={id} />
       <PushManager participanteId={participanteObj.id} />

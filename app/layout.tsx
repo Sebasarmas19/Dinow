@@ -39,6 +39,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -49,9 +50,9 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`${bricolage.variable} ${hanken.variable} h-full antialiased`}
+      className={`${bricolage.variable} ${hanken.variable} antialiased`}
     >
-      <body className="min-h-full bg-crema">
+      <body className="min-h-screen bg-crema text-tinta">
         {children}
         <Toaster 
           position="top-center" 
