@@ -489,18 +489,72 @@ function AdminIcon({ size = 40, color = "#A0907C" }: { size?: number; color?: st
   );
 }
 
-// ── Modal de PIN ────────────────────────────────────────────────────────────
+// ── Modal de PIN y Face ID ────────────────────────────────────────────────
+
+function FaceIdIcon({ size = 20, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M7 3H5a2 2 0 0 0-2 2v2" />
+      <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+      <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+      <path d="M3 17v2a2 2 0 0 0 2 2h2" />
+      <path d="M9 10h.01" />
+      <path d="M15 10h.01" />
+      <path d="M10 14a2 2 0 0 0 4 0" />
+    </svg>
+  );
+}
 
 function PinModal({ user, onClose }: { user: { id: string; nombre: string }; onClose: () => void }) {
   const router = useRouter();
   const [pin, setPin] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [loading, setLoading] = useState(false);
+  const [biometriaDisponible, setBiometriaDisponible] = useState(false);
+  const [tieneCredenciales, setTieneCredenciales] = useState(false);
+  const [biometriaLoading, setBiometriaLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    let cancelado = false;
+    async function checkBiometria() {
+      try {
+        const { platformAuthenticatorIsAvailable } = await import("@simplewebauthn/browser");
+        const disponible = await platformAuthenticatorIsAvailable();
+        if (cancelado) return;
+        setBiometriaDisponible(disponible);
+
+        if (disponible) {
+          const { tieneBiometriaRegistradaAction } = await import("@/lib/auth/webauthn.actions");
+          const res = await tieneBiometriaRegistradaAction(user.id);
+          if (!cancelado && res.ok && res.data) {
+            setTieneCredenciales(true);
+          }
+        }
+      } catch {
+        // Ignorar si no soporta biometría
+      }
+    }
+    checkBiometria();
+    return () => {
+      cancelado = true;
+    };
+  }, [user.id]);
+
+  useEffect(() => {
+    // Si no tiene biometría directa, enfocamos el input de PIN
     inputRef.current?.focus();
-  }, []);
+  }, [tieneCredenciales]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -517,6 +571,40 @@ function PinModal({ user, onClose }: { user: { id: string; nombre: string }; onC
       document.body.style.overflow = prev;
     };
   }, []);
+
+  const handleFaceIdLogin = async () => {
+    setBiometriaLoading(true);
+    setErrorMsg("");
+    try {
+      const { generarOpcionesLoginAction, verificarLoginAction } = await import("@/lib/auth/webauthn.actions");
+      const { startAuthentication } = await import("@simplewebauthn/browser");
+
+      const opts = await generarOpcionesLoginAction(user.id);
+      if (!opts.ok) {
+        setErrorMsg(opts.error);
+        setBiometriaLoading(false);
+        return;
+      }
+
+      const authResp = await startAuthentication({ optionsJSON: opts.data });
+      const verif = await verificarLoginAction(authResp);
+
+      if (!verif.ok) {
+        setErrorMsg(verif.error);
+        setBiometriaLoading(false);
+        return;
+      }
+
+      window.location.href = `/${user.id}`;
+    } catch (err: any) {
+      if (err.name === "NotAllowedError") {
+        // Cancelado por el usuario, sin error rojo alarmante
+      } else {
+        setErrorMsg(err.message || "Error al verificar Face ID");
+      }
+      setBiometriaLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -555,37 +643,89 @@ function PinModal({ user, onClose }: { user: { id: string; nombre: string }; onC
             Hola, {user.nombre}
           </p>
           <p className="mt-0.5 text-[13px] font-medium text-[#9a8c7c] text-center">
-            Ingresa tu PIN de 4 dígitos
+            {tieneCredenciales
+              ? "Accede con Face ID o tu PIN"
+              : "Ingresa tu PIN de 4 dígitos"}
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div>
-            <input
-              ref={inputRef}
-              type="password"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={4}
-              placeholder="••••"
-              value={pin}
-              onChange={(e) => {
-                setPin(e.target.value.replace(/\D/g, ""));
-                setErrorMsg("");
+        <div className="flex flex-col gap-4">
+          {/* Botón de Face ID si está disponible y registrado */}
+          {biometriaDisponible && tieneCredenciales && (
+            <>
+              <button
+                type="button"
+                onClick={handleFaceIdLogin}
+                disabled={biometriaLoading || loading}
+                className="flex w-full items-center justify-center gap-2.5 rounded-[16px] border border-[#dccdb4] bg-white py-3.5 px-4 font-display text-[15px] font-bold text-tinta shadow-sm transition-all hover:bg-[#faf5eb] active:scale-[0.98] disabled:opacity-50"
+              >
+                {biometriaLoading ? (
+                  <span className="inline-block size-[18px] animate-spin rounded-full border-2 border-tinta/30 border-t-tinta" />
+                ) : (
+                  <>
+                    <FaceIdIcon size={20} color="#D2602F" />
+                    <span>Entrar con Face ID</span>
+                  </>
+                )}
+              </button>
+
+              <div className="flex items-center gap-3">
+                <div className="h-px flex-1 bg-[#e6d9c4]" />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#a0907c]">
+                  o con PIN
+                </span>
+                <div className="h-px flex-1 bg-[#e6d9c4]" />
+              </div>
+            </>
+          )}
+
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <div>
+              <input
+                ref={inputRef}
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={4}
+                placeholder="••••"
+                value={pin}
+                onChange={(e) => {
+                  setPin(e.target.value.replace(/\D/g, ""));
+                  setErrorMsg("");
+                }}
+                className="w-full text-center tracking-[0.5em] rounded-[14px] border-[1.5px] border-[#e6d9c4] bg-[#faf5eb] p-[14px] text-[20px] font-medium text-tinta transition-colors focus:border-terracota focus:outline-none focus:ring-[2px] focus:ring-terracota/20"
+              />
+              {errorMsg && (
+                <p role="alert" className="mt-2 text-[13px] font-semibold text-[#c0392b] text-center">
+                  {errorMsg}
+                </p>
+              )}
+            </div>
+            <button
+              type="submit"
+              disabled={loading || biometriaLoading}
+              className="flex w-full items-center justify-center gap-2.5 rounded-[16px] p-[16px] font-display text-[17px] font-bold tracking-[-0.01em] text-white transition-all hover:brightness-[1.04] active:scale-[0.975] disabled:cursor-not-allowed disabled:opacity-50"
+              style={{
+                background: "linear-gradient(180deg, #E2733F, #D2602F)",
+                boxShadow: "0 14px 26px -10px rgba(210,96,47,.75)",
               }}
-              className="w-full text-center tracking-[0.5em] rounded-[14px] border-[1.5px] border-[#e6d9c4] bg-[#faf5eb] p-[14px] text-[20px] font-medium text-tinta transition-colors focus:border-terracota focus:outline-none focus:ring-[2px] focus:ring-terracota/20"
-            />
-            {errorMsg && (
-              <p role="alert" className="mt-2 text-[13px] font-semibold text-[#c0392b] text-center">
-                {errorMsg}
-              </p>
-            )}
-          </div>
-          <button type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2.5 rounded-[16px] p-[16px] font-display text-[17px] font-bold tracking-[-0.01em] text-white transition-all hover:brightness-[1.04] active:scale-[0.975] disabled:cursor-not-allowed disabled:opacity-50" style={{ background: "linear-gradient(180deg, #E2733F, #D2602F)", boxShadow: "0 14px 26px -10px rgba(210,96,47,.75)" }}>
-            {loading ? <span className="inline-block size-[20px] animate-spin rounded-full border-[2.5px] border-white/30 border-t-white" /> : "Entrar"}
-          </button>
-        </form>
+            >
+              {loading ? (
+                <span className="inline-block size-[20px] animate-spin rounded-full border-[2.5px] border-white/30 border-t-white" />
+              ) : (
+                "Entrar"
+              )}
+            </button>
+          </form>
+
+          {biometriaDisponible && !tieneCredenciales && (
+            <p className="text-center text-[11px] font-medium text-[#a0907c]">
+              💡 Puedes activar Face ID una vez entres en tu Perfil.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
 }
+

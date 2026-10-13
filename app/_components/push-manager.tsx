@@ -24,15 +24,9 @@ export function PushManager({ participanteId }: { participanteId: string }) {
       navigator.serviceWorker.register("/sw.js").then((registration) => {
         console.log("Service Worker registrado con éxito");
 
-        // Si ya hay permiso, intentamos suscribir en background
+        // Si ya hay permiso concedido previamente, nos aseguramos de que esté suscrito en background
         if (Notification.permission === "granted") {
           subscribeUser(registration);
-        } else if (Notification.permission !== "denied") {
-          Notification.requestPermission().then((permission) => {
-            if (permission === "granted") {
-              subscribeUser(registration);
-            }
-          });
         }
       });
     }

@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   date,
   integer,
@@ -78,6 +79,20 @@ export const sesiones = pgTable("sesiones", {
     onDelete: "cascade",
   }),
   expiraEn: timestamp("expira_en", { withTimezone: true }).notNull(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// credenciales_biometricas — credenciales WebAuthn (Passkeys / Face ID)
+// ─────────────────────────────────────────────────────────────────────────────
+export const credencialesBiometricas = pgTable("credenciales_biometricas", {
+  id: text("id").primaryKey(), // Credential ID (base64url)
+  participanteId: uuid("participante_id")
+    .notNull()
+    .references(() => participantes.id, { onDelete: "cascade" }),
+  publicKey: text("public_key").notNull(),
+  counter: bigint("counter", { mode: "number" }).notNull().default(0),
+  transports: text("transports").array(),
+  dispositivoNombre: text("dispositivo_nombre").default("Face ID / Dispositivo"),
   creadoEn: timestamp("creado_en", { withTimezone: true }).defaultNow(),
 });
 

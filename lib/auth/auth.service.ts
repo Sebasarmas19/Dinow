@@ -42,7 +42,7 @@ export function compararClave(textoPlano: string, hashGuardado: string): boolean
 
 // ── MANEJO DE SESIONES ──────────────────────────────────────────────────────
 
-async function crearYGuardarSesion(datos: SesionUsuario): Promise<void> {
+export async function crearYGuardarSesion(datos: SesionUsuario): Promise<void> {
   const sessionId = crypto.randomBytes(32).toString("hex");
   const expiraEn = new Date(Date.now() + SESSION_MAX_AGE);
 

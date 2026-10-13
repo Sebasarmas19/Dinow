@@ -12,6 +12,8 @@ import { eq } from "drizzle-orm";
 import { CATALOGO_LOGROS } from "@/lib/logros/catalogo";
 import { AvatarClient } from "./avatar-client";
 import { ChangePinClient } from "./change-pin-client";
+import { BiometriaClient } from "./biometria-client";
+import { NotificacionesClient } from "./notificaciones-client";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -193,6 +195,12 @@ export default async function PerfilPage({ params }: Props) {
           </span>
         </div>
       </div>
+
+      {/* Seguridad con Face ID / Biometría */}
+      <BiometriaClient participanteId={yo.id} />
+
+      {/* Recordatorios y Notificaciones Push */}
+      <NotificacionesClient participanteId={yo.id} />
 
       {/* Logros/Medallas de la Casa */}
       <div className="flex flex-col gap-3.5 animate-rise-delay-2">
