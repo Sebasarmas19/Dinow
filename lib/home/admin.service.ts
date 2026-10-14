@@ -61,7 +61,12 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     })
     .from(planSemanalTable)
     .innerJoin(deberes, eq(planSemanalTable.deberId, deberes.id))
-    .where(eq(planSemanalTable.hogarId, hogarActual.id));
+    .where(
+      and(
+        eq(planSemanalTable.hogarId, hogarActual.id),
+        eq(deberes.activo, true)
+      )
+    );
 
   // 4. Construir las etiquetas de los 7 días (0 = Domingo)
   const diasLabels = [

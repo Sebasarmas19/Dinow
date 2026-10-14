@@ -52,7 +52,13 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
     .from(asignaciones)
     .innerJoin(deberes, eq(asignaciones.deberId, deberes.id))
     .leftJoin(criteriosDeber, eq(criteriosDeber.deberId, deberes.id))
-    .where(and(eq(asignaciones.hogarId, hogarActual.id), eq(asignaciones.fecha, fechaHoyStr)));
+    .where(
+      and(
+        eq(asignaciones.hogarId, hogarActual.id),
+        eq(asignaciones.fecha, fechaHoyStr),
+        eq(deberes.activo, true)
+      )
+    );
 
   // Agrupar criterios por deber
   const deberesAgrupados = new Map<string, { asignacion: any; deber: any; criterios: string[] }>();

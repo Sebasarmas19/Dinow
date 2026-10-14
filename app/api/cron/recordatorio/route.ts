@@ -65,7 +65,7 @@ export async function GET(request: Request) {
         .from(asignaciones)
         .innerJoin(deberes, eq(asignaciones.deberId, deberes.id))
         .innerJoin(participantes, eq(asignaciones.participanteId, participantes.id))
-        .where(and(eq(asignaciones.fecha, fechaHoyStr), eq(deberes.tipoAsignacion, "rotativo")));
+        .where(and(eq(asignaciones.fecha, fechaHoyStr), eq(deberes.tipoAsignacion, "rotativo"), eq(deberes.activo, true)));
 
       for (const sub of suscripcionesValidas) {
         // Buscar el deber principal (no personal)
@@ -94,7 +94,7 @@ export async function GET(request: Request) {
         .from(asignaciones)
         .innerJoin(deberes, eq(asignaciones.deberId, deberes.id))
         .innerJoin(participantes, eq(asignaciones.participanteId, participantes.id))
-        .where(and(eq(asignaciones.fecha, fechaHoyStr), eq(deberes.esObligatorio, true)));
+        .where(and(eq(asignaciones.fecha, fechaHoyStr), eq(deberes.esObligatorio, true), eq(deberes.activo, true)));
 
       const registrosHoy = await db
         .select()

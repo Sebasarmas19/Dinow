@@ -17,7 +17,11 @@ export async function listarAsignacionesConDeber(hogarId: string, fechaStr: stri
     .from(asignaciones)
     .innerJoin(deberes, eq(asignaciones.deberId, deberes.id))
     .where(
-      and(eq(asignaciones.hogarId, hogarId), eq(asignaciones.fecha, fechaStr)),
+      and(
+        eq(asignaciones.hogarId, hogarId),
+        eq(asignaciones.fecha, fechaStr),
+        eq(deberes.activo, true)
+      ),
     );
 }
 

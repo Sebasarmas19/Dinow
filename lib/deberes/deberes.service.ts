@@ -7,6 +7,9 @@ import {
   obtenerDeber,
 } from "./deberes.repo";
 import { reemplazarCriterios } from "./criterios.repo";
+import { db } from "@/lib/db";
+import { asignaciones } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 
 /**
  * Logica de negocio de deberes. Un deber tiene dos ejes independientes:
@@ -253,8 +256,13 @@ export async function desactivarDeber(id: string): Promise<Deber> {
 
   const actualizado = await actualizarDeber(id, { activo: false });
   if (!actualizado) throw new Error("No se pudo desactivar el deber.");
+
+  // Limpiar asignaciones pendientes del deber desactivado para que no aparezca en el plan ni en la vista diaria
+  await db.delete(asignaciones).where(eq(asignaciones.deberId, id));
+
   return actualizado;
 }
+
 
 /** Reactiva un deber que estaba inactivo. */
 export async function reactivarDeber(id: string): Promise<Deber> {
