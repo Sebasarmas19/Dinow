@@ -55,22 +55,67 @@ export async function GET(request: Request) {
 
     // Detectar franja horaria (slot)
     let slot = paramSlot;
-    const utcHour = new Date().getUTCHours();
+    
+    // Calcular hora exacta en Caracas (UTC - 4 horas)
+    const ahoraUtc = new Date();
+    const utcHour = ahoraUtc.getUTCHours();
+    const utcMinutes = ahoraUtc.getUTCMinutes();
+    const minutosUtc = utcHour * 60 + utcMinutes;
+    const minutosCaracas = (minutosUtc - 4 * 60 + 24 * 60) % (24 * 60);
+    const horaCaracas = Math.floor(minutosCaracas / 60);
+    const minCaracas = minutosCaracas % 60;
+    const horaCaracasStr = `${horaCaracas.toString().padStart(2, "0")}:${minCaracas.toString().padStart(2, "0")}`;
 
     if (!slot) {
-      if (utcHour >= 9 && utcHour <= 12) {
-        slot = "manana";
-      } else if (utcHour >= 16 && utcHour <= 18) {
-        slot = "almuerzo";
-      } else if (utcHour >= 21 && utcHour <= 23) {
-        slot = "tarde";
-      } else if (utcHour === 0) {
-        slot = "anticipacion";
-      } else if (utcHour >= 1 && utcHour <= 3) {
-        slot = "alerta_cierre";
+      if (horaCaracas >= 6 && horaCaracas < 10) {
+        slot = "manana"; // 6:00 AM a 9:59 AM Caracas
+      } else if (horaCaracas >= 12 && horaCaracas < 15) {
+        slot = "almuerzo"; // 12:00 PM a 2:59 PM Caracas
+      } else if (horaCaracas >= 17 && horaCaracas < 20) {
+        slot = "tarde"; // 5:00 PM a 7:59 PM Caracas
+      } else if (horaCaracas === 20 || (horaCaracas === 21 && minCaracas < 15)) {
+        slot = "anticipacion"; // 8:00 PM a 9:14 PM Caracas
+      } else if ((horaCaracas === 21 && minCaracas >= 15) || horaCaracas === 22 || horaCaracas === 23) {
+        slot = "alerta_cierre"; // 9:15 PM a 11:59 PM Caracas
       } else {
-        slot = "anticipacion"; // Fallback por defecto
+        // Fuera de cualquier ventana programada: NO enviar nada
+        return Response.json({
+          success: true,
+          mensaje: "Sin recordatorios programados en este horario.",
+          horaCaracas: horaCaracasStr,
+          horaUtc: utcHour,
+          notificacionesEnviadas: 0,
+        });
       }
+    }
+
+    // Protección contra ejecuciones tardías (si GitHub Actions se retrasa horas, no enviar spam desfasado)
+    if (slot === "manana" && horaCaracas >= 11) {
+      return Response.json({
+        success: true,
+        descartado: true,
+        motivo: "Recordatorio de mañana descartado por retraso de ejecución.",
+        horaCaracas: horaCaracasStr,
+        notificacionesEnviadas: 0,
+      });
+    }
+    if (slot === "almuerzo" && horaCaracas >= 16) {
+      return Response.json({
+        success: true,
+        descartado: true,
+        motivo: "Recordatorio de almuerzo descartado por retraso de ejecución.",
+        horaCaracas: horaCaracasStr,
+        notificacionesEnviadas: 0,
+      });
+    }
+    if (slot === "anticipacion" && (horaCaracas < 19 && horaCaracas >= 4)) {
+      return Response.json({
+        success: true,
+        descartado: true,
+        motivo: "Plan de mañana descartado porque no es hora de la noche.",
+        horaCaracas: horaCaracasStr,
+        notificacionesEnviadas: 0,
+      });
     }
 
     // Obtener suscripciones push únicas por participante y endpoint
@@ -385,6 +430,7 @@ export async function GET(request: Request) {
       success: true,
       slotEjecutado: slot,
       notificacionesEnviadas: envios.length,
+      horaCaracas: horaCaracasStr,
       horaUtc: utcHour,
     });
   } catch (error) {
