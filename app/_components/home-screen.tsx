@@ -90,6 +90,7 @@ export type HomeScreenProps = {
   extras: ExtraSemana[];
   puntosBase: number;
   posicionLabel: string;
+  deberManana?: { nombre: string; icono: string; puntos: number } | null;
 };
 
 // ── Tipos internos ──────────────────────────────────────────────────────────
@@ -121,6 +122,7 @@ export function HomeScreen({
   puntosBase,
   posicionLabel,
   miId,
+  deberManana,
 }: HomeScreenProps) {
   const [isPending, startTransition] = useTransition();
 
@@ -300,6 +302,33 @@ export function HomeScreen({
               className={idx > 0 ? "mt-3.5" : ""}
             />
           ))
+        )}
+
+        {/* Qué te toca mañana */}
+        {deberManana && (
+          <section aria-label="Deber de mañana" className="mt-4">
+            <div className="flex items-center justify-between rounded-[22px] border border-[#f0e6d5] bg-crema-card p-4 shadow-sm">
+              <div className="flex items-center gap-3">
+                <span
+                  aria-hidden="true"
+                  className="flex size-[42px] items-center justify-center rounded-2xl bg-[#faf5eb] border border-[#f0e6d5] text-[20px]"
+                >
+                  {deberManana.icono}
+                </span>
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#b19a80]">
+                    Mañana te toca
+                  </span>
+                  <p className="font-display text-[16px] font-extrabold text-tinta leading-tight">
+                    {deberManana.nombre}
+                  </p>
+                </div>
+              </div>
+              <span className="rounded-xl bg-[#fbe3d0] px-2.5 py-1 font-display text-[12px] font-extrabold text-terracota">
+                +{deberManana.puntos} pts
+              </span>
+            </div>
+          </section>
         )}
 
         {/* Estado de hoy: los hermanos y sus deberes */}

@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
-import { asignaciones, deberes, participantes, suscripcionesPush, registros } from "@/lib/db/schema";
-import { obtenerFechaDeNegocio, formatearFechaISO } from "@/lib/shared/date";
+import { asignaciones, deberes, participantes, suscripcionesPush, registros, planSemanal } from "@/lib/db/schema";
+import { obtenerFechaDeNegocio, formatearFechaISO, sumarDias } from "@/lib/shared/date";
 import { eq, and, sql } from "drizzle-orm";
 import webpush from "web-push";
 
@@ -132,44 +132,67 @@ export async function GET(request: Request) {
       }
     }
 
-    // --- LÓGICA DE LA NOCHE (7 PM) ---
+    // --- LÓGICA DE LA NOCHE (7 PM / 8 PM) ---
+    // Avisar con anticipación qué le toca a cada quien mañana para que se preparen
     if (isEvening) {
-      // Buscar deberes extras (reclamables) activos hoy
-      const extrasDisponibles = await db
-        .select()
-        .from(deberes)
-        .where(and(
-          eq(deberes.esObligatorio, false),
-          eq(deberes.activo, true)
-        ));
-      
-      const extrasDeHoy = extrasDisponibles.filter(d => d.diasDisponibles.includes(diaActualStr));
+      const manana = sumarDias(hoy, 1);
+      const fechaMananaStr = formatearFechaISO(manana);
+      const diaMananaInt = manana.getDay();
 
-      if (extrasDeHoy.length > 0) {
-        // Filtramos los que no hayan sido reclamados hoy
-        const registrosHoy = await db
-          .select()
-          .from(registros)
-          .where(and(eq(registros.fecha, fechaHoyStr), eq(registros.estado, "reclamado")));
-          
-        const extrasSinReclamar = extrasDeHoy.filter(ext => !registrosHoy.some(r => r.deberId === ext.id));
+      const asignacionesManana = await db
+        .select({
+          participanteId: asignaciones.participanteId,
+          participanteNombre: participantes.nombre,
+          deberNombre: deberes.nombre,
+          deberPuntos: deberes.puntos,
+        })
+        .from(asignaciones)
+        .innerJoin(deberes, eq(asignaciones.deberId, deberes.id))
+        .innerJoin(participantes, eq(asignaciones.participanteId, participantes.id))
+        .where(
+          and(
+            eq(asignaciones.fecha, fechaMananaStr),
+            eq(deberes.esObligatorio, true),
+            eq(deberes.activo, true)
+          )
+        );
 
-        if (extrasSinReclamar.length > 0) {
-          const randomExtra = extrasSinReclamar[Math.floor(Math.random() * extrasSinReclamar.length)];
+      for (const sub of suscripcionesValidas) {
+        let suAsignacion = asignacionesManana.find(a => a.participanteId === sub.participanteId);
 
-          for (const sub of suscripcionesValidas) {
-            // Obtenemos el nombre del participante (solo necesitamos buscarlo para armar la url)
-            const [part] = await db.select({ nombre: participantes.nombre }).from(participantes).where(eq(participantes.id, sub.participanteId));
-            if (part) {
-              envios.push(
-                enviarPush(sub, 
-                  `¡Oye ${part.nombre}! 🚀`, 
-                  `Aún puedes ganar +${randomExtra.puntos} pts extra hoy si haces esta tarea: ${randomExtra.nombre}. ¡Aprovecha!`,
-                  `/${encodeURIComponent(part.nombre.toLowerCase())}`
-                )
-              );
-            }
+        // Fallback a matriz de plan_semanal si las asignaciones aún no están generadas en tabla
+        if (!suAsignacion) {
+          const [desdePlan] = await db
+            .select({
+              participanteId: planSemanal.participanteId,
+              participanteNombre: participantes.nombre,
+              deberNombre: deberes.nombre,
+              deberPuntos: deberes.puntos,
+            })
+            .from(planSemanal)
+            .innerJoin(deberes, eq(planSemanal.deberId, deberes.id))
+            .innerJoin(participantes, eq(planSemanal.participanteId, participantes.id))
+            .where(
+              and(
+                eq(planSemanal.participanteId, sub.participanteId),
+                eq(planSemanal.diaSemana, diaMananaInt),
+                eq(deberes.activo, true)
+              )
+            );
+          if (desdePlan) {
+            suAsignacion = desdePlan;
           }
+        }
+
+        if (suAsignacion) {
+          envios.push(
+            enviarPush(
+              sub,
+              `¡Hola ${suAsignacion.participanteNombre}! 🔮 Plan de mañana`,
+              `Mañana te toca la misión: ${suAsignacion.deberNombre} (+${suAsignacion.deberPuntos} pts). ¡Para que lo tengas en cuenta!`,
+              `/${encodeURIComponent(suAsignacion.participanteNombre.toLowerCase())}`
+            )
+          );
         }
       }
     }

@@ -6,10 +6,11 @@ import {
   deberes,
   hogar,
   participantes,
+  planSemanal as planSemanalTable,
   registros,
   transaccionesPuntos,
 } from "../db/schema";
-import { formatearFechaISO, formatearFechaLabel, obtenerFechaDeNegocio } from "../shared/date";
+import { formatearFechaISO, formatearFechaLabel, obtenerFechaDeNegocio, sumarDias } from "../shared/date";
 import type { DeberHoy, ExtraSemana, HermanoEstado, HomeScreenProps } from "../../app/_components/home-screen";
 
 /**
@@ -298,7 +299,64 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
   const medalla = miPosicion === 1 ? "🥇" : miPosicion === 2 ? "🥈" : miPosicion === 3 ? "🥉" : "";
   const posicionLabel = `${miPosicion}º general ${medalla}`;
 
-  // 9. Retornar los props listos para renderizar
+  // 9. Deber obligatorio de mañana
+  const manana = sumarDias(fechaActual, 1);
+  const fechaMananaStr = formatearFechaISO(manana);
+
+  let [asigManana] = await db
+    .select({
+      nombre: deberes.nombre,
+      icono: deberes.icono,
+      puntos: deberes.puntos,
+    })
+    .from(asignaciones)
+    .innerJoin(deberes, eq(asignaciones.deberId, deberes.id))
+    .where(
+      and(
+        eq(asignaciones.hogarId, hogarActual.id),
+        eq(asignaciones.participanteId, yo.id),
+        eq(asignaciones.fecha, fechaMananaStr),
+        eq(deberes.esObligatorio, true),
+        eq(deberes.activo, true)
+      )
+    );
+
+  if (!asigManana) {
+    const diaMananaInt = manana.getDay();
+    const [planManana] = await db
+      .select({
+        nombre: deberes.nombre,
+        icono: deberes.icono,
+        puntos: deberes.puntos,
+      })
+      .from(planSemanalTable)
+      .innerJoin(deberes, eq(planSemanalTable.deberId, deberes.id))
+      .where(
+        and(
+          eq(planSemanalTable.hogarId, hogarActual.id),
+          eq(planSemanalTable.participanteId, yo.id),
+          eq(planSemanalTable.diaSemana, diaMananaInt),
+          eq(deberes.activo, true)
+        )
+      );
+    if (planManana) {
+      asigManana = {
+        nombre: planManana.nombre,
+        icono: planManana.icono || "✨",
+        puntos: planManana.puntos,
+      };
+    }
+  }
+
+  const deberManana = asigManana
+    ? {
+        nombre: asigManana.nombre,
+        icono: asigManana.icono || "✨",
+        puntos: Number(asigManana.puntos),
+      }
+    : null;
+
+  // 10. Retornar los props listos para renderizar
   return {
     miId: yo.id,
     userName: yo.nombre,
@@ -308,5 +366,7 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
     extras: extrasFormateados,
     puntosBase: misPuntosBase,
     posicionLabel,
+    deberManana,
   };
 }
+

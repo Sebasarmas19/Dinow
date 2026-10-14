@@ -30,6 +30,7 @@ export default async function UsuarioHome({ params }: Props) {
         extras={data.extras}
         puntosBase={data.puntosBase}
         posicionLabel={data.posicionLabel}
+        deberManana={data.deberManana}
       />
     );
   } catch {
