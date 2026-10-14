@@ -1,9 +1,8 @@
-name: Generar Día (Cron)
+name: Generar Día (Manual)
 
+# Deshabilitamos schedule automático aquí porque cron-job.org se encarga de dispararlo a las 3:00 AM exactas.
+# Mantenemos workflow_dispatch para que puedas dispararlo manualmente desde GitHub si alguna vez lo necesitas.
 on:
-  schedule:
-    # Ejecuta a las 07:00 UTC (3:00 AM Hora de Caracas)
-    - cron: '0 7 * * *'
   workflow_dispatch:
 
 jobs:
