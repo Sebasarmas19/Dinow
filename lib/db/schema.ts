@@ -43,6 +43,8 @@ export const hogar = pgTable("hogar", {
     .default("10"),
   // Contraseña del perfil Admin
   claveAdmin: text("clave_admin").notNull(),
+  // Código de acceso del hogar para desbloquear la PWA (puerta familiar)
+  codigoAcceso: text("codigo_acceso").default("armas2026"),
   creadoEn: timestamp("creado_en", { withTimezone: true }).defaultNow(),
 });
 
@@ -66,6 +68,9 @@ export const participantes = pgTable("participantes", {
   ordenRotacion: integer("orden_rotacion"),
   // PIN encriptado para acceso al perfil. Nullable por si es una casa sin PIN
   pinHash: text("pin_hash"),
+  // Seguridad y resistencia a fuerza bruta
+  intentosFallidos: integer("intentos_fallidos").default(0),
+  bloqueadoHasta: timestamp("bloqueado_hasta", { withTimezone: true }),
   creadoEn: timestamp("creado_en", { withTimezone: true }).defaultNow(),
 });
 

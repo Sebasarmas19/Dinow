@@ -2,8 +2,8 @@
 
 import { useState, useRef, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import type { PerfilParticipante } from "../../lib/home/profile.service";
+import { salirDelHogarAction } from "@/lib/auth/auth.actions";
 
 // ── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -255,6 +255,16 @@ function EstadoConUsuarios({
           </div>
         </button>
       </div>
+
+      {/* Salir del hogar (bloquear este dispositivo) */}
+      <form action={salirDelHogarAction} className="mt-8 animate-rise-delay-2">
+        <button
+          type="submit"
+          className="text-[12px] font-medium text-[#a0907c] hover:text-terracota transition-colors underline underline-offset-4"
+        >
+          🔒 Salir del hogar (bloquear dispositivo)
+        </button>
+      </form>
 
       {/* Modal de contraseña de admin */}
       {showPasswordModal && (

@@ -91,14 +91,45 @@ export async function loginAdmin(claveIngresada: string): Promise<boolean> {
 
 export async function loginParticipante(participanteId: string, pinIngresado: string): Promise<boolean> {
   const [participante] = await db.select().from(participantes).where(eq(participantes.id, participanteId));
-  if (!participante || !participante.pinHash) return false;
+  if (!participante || !participante.pinHash) throw new Error("Perfil no configurado");
 
-  const esValida = compararClave(pinIngresado, participante.pinHash);
-  if (esValida) {
-    await crearYGuardarSesion({ rol: "usuario", participanteId });
-    return true;
+  // 1. Verificar si está bloqueado por demasiados intentos erróneos
+  if (participante.bloqueadoHasta && participante.bloqueadoHasta.getTime() > Date.now()) {
+    const minutosRestantes = Math.ceil((participante.bloqueadoHasta.getTime() - Date.now()) / 60000);
+    throw new Error(`Perfil bloqueado por seguridad. Intenta de nuevo en ${minutosRestantes} minutos.`);
   }
-  return false;
+
+  // 2. Comparar PIN
+  const esValida = compararClave(pinIngresado, participante.pinHash);
+
+  if (!esValida) {
+    const fallosActuales = (participante.intentosFallidos || 0) + 1;
+    let bloqueo: Date | null = null;
+
+    if (fallosActuales >= 5) {
+      bloqueo = new Date(Date.now() + 15 * 60 * 1000); // Bloqueo de 15 minutos
+      await db
+        .update(participantes)
+        .set({ intentosFallidos: 0, bloqueadoHasta: bloqueo })
+        .where(eq(participantes.id, participanteId));
+      throw new Error("Has superado 5 intentos fallidos. Perfil bloqueado por 15 minutos.");
+    } else {
+      await db
+        .update(participantes)
+        .set({ intentosFallidos: fallosActuales })
+        .where(eq(participantes.id, participanteId));
+      throw new Error(`PIN incorrecto. Te quedan ${5 - fallosActuales} intentos.`);
+    }
+  }
+
+  // 3. PIN correcto: reiniciar contador de fallos y desbloquear
+  await db
+    .update(participantes)
+    .set({ intentosFallidos: 0, bloqueadoHasta: null })
+    .where(eq(participantes.id, participanteId));
+
+  await crearYGuardarSesion({ rol: "usuario", participanteId });
+  return true;
 }
 
 /**
@@ -133,3 +164,41 @@ export async function cerrarSesion(): Promise<void> {
   }
   cookieStore.delete(COOKIE_NAME);
 }
+
+// ── PUERTA DE ACCESO AL HOGAR (HOUSEHOLD GATE) ──────────────────────────────
+const HOGAR_COOKIE_NAME = "dinow_hogar_autorizado";
+const HOGAR_COOKIE_MAX_AGE = 365 * 24 * 60 * 60; // 1 año
+
+export async function verificarHogarAutorizado(): Promise<boolean> {
+  const cookieStore = await cookies();
+  const hogarIdCookie = cookieStore.get(HOGAR_COOKIE_NAME)?.value;
+  if (!hogarIdCookie) return false;
+
+  const [h] = await db.select({ id: hogar.id }).from(hogar).where(eq(hogar.id, hogarIdCookie)).limit(1);
+  return !!h;
+}
+
+export async function autorizarHogar(codigoIngresado: string): Promise<boolean> {
+  const [hogarActual] = await db.select().from(hogar).limit(1);
+  if (!hogarActual) return false;
+
+  const codigoGuardado = hogarActual.codigoAcceso || "armas2026";
+  if (codigoIngresado.trim().toLowerCase() === codigoGuardado.trim().toLowerCase()) {
+    const cookieStore = await cookies();
+    cookieStore.set(HOGAR_COOKIE_NAME, hogarActual.id, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: HOGAR_COOKIE_MAX_AGE,
+    });
+    return true;
+  }
+  return false;
+}
+
+export async function desautorizarHogar(): Promise<void> {
+  const cookieStore = await cookies();
+  cookieStore.delete(HOGAR_COOKIE_NAME);
+}
+
