@@ -5,7 +5,6 @@ import { getProfilePageData } from "../lib/home/profile.service";
 import {
   verificarSesionActual,
   verificarHogarAutorizado,
-  garantizarHogarCookie,
 } from "@/lib/auth/auth.service";
 
 type Props = {
@@ -13,7 +12,7 @@ type Props = {
 };
 
 /**
- * Página raíz (/) — flujo de acceso y privacidad (Opción B perfeccionada):
+ * Página raíz (/) — flujo de acceso y privacidad (Opción B):
  *
  * 1. Si NO hay hogar configurado en la base de datos → Landing page con setup inicial.
  * 2. Si el usuario YA tiene sesión activa recordada de un participante (y no se solicitó ?cambiar=1) →
@@ -42,11 +41,9 @@ export default async function Home({ searchParams }: Props) {
           (p) => p.id === sesion.participanteId
         );
         if (existe) {
-          await garantizarHogarCookie();
           redirect(`/${sesion.participanteId}`);
         }
       } else if (sesion.rol === "admin") {
-        await garantizarHogarCookie();
         redirect("/admin");
       }
     }
