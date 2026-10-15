@@ -54,7 +54,7 @@ export async function crearYGuardarSesion(datos: SesionUsuario): Promise<void> {
     expiraEn,
   });
 
-  // Guardar cookie
+  // Guardar cookie de sesión
   const cookieStore = await cookies();
   cookieStore.set(COOKIE_NAME, sessionId, {
     httpOnly: true,
@@ -64,6 +64,9 @@ export async function crearYGuardarSesion(datos: SesionUsuario): Promise<void> {
     maxAge: SESSION_MAX_AGE / 1000,
     expires: expiraEn,
   });
+
+  // Garantizar que este dispositivo también tenga la autorización del hogar
+  await garantizarHogarCookie();
 }
 
 export async function loginAdmin(claveIngresada: string): Promise<boolean> {
@@ -178,6 +181,24 @@ export async function verificarHogarAutorizado(): Promise<boolean> {
   return !!h;
 }
 
+export async function garantizarHogarCookie(): Promise<void> {
+  const [hogarActual] = await db.select({ id: hogar.id }).from(hogar).limit(1);
+  if (!hogarActual) return;
+  const cookieStore = await cookies();
+  const actual = cookieStore.get(HOGAR_COOKIE_NAME)?.value;
+  if (!actual) {
+    const expiraEn = new Date(Date.now() + HOGAR_COOKIE_MAX_AGE * 1000);
+    cookieStore.set(HOGAR_COOKIE_NAME, hogarActual.id, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: HOGAR_COOKIE_MAX_AGE,
+      expires: expiraEn,
+    });
+  }
+}
+
 export async function autorizarHogar(codigoIngresado: string): Promise<boolean> {
   const [hogarActual] = await db.select().from(hogar).limit(1);
   if (!hogarActual) return false;
@@ -185,12 +206,14 @@ export async function autorizarHogar(codigoIngresado: string): Promise<boolean> 
   const codigoGuardado = hogarActual.codigoAcceso || "armas2026";
   if (codigoIngresado.trim().toLowerCase() === codigoGuardado.trim().toLowerCase()) {
     const cookieStore = await cookies();
+    const expiraEn = new Date(Date.now() + HOGAR_COOKIE_MAX_AGE * 1000);
     cookieStore.set(HOGAR_COOKIE_NAME, hogarActual.id, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
       maxAge: HOGAR_COOKIE_MAX_AGE,
+      expires: expiraEn,
     });
     return true;
   }

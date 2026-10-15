@@ -340,14 +340,12 @@ function PasswordModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div className="animate-fade-in absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
+      <div 
+        className="animate-fade-in absolute inset-0 bg-black/40 backdrop-blur-[2px]" 
+        onClick={onClose}
+      />
 
       {/* Dialog */}
       <div
@@ -643,8 +641,12 @@ function PinModal({ user, onClose }: { user: { id: string; nombre: string }; onC
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="animate-fade-in absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div 
+        className="animate-fade-in absolute inset-0 bg-black/40 backdrop-blur-[2px]" 
+        onClick={onClose}
+      />
       <div role="dialog" aria-modal="true" className="animate-pop-lg relative z-10 w-full max-w-[320px] rounded-[26px] bg-crema-card p-6 outline-none" style={{ boxShadow: "0 20px 50px -16px rgba(60,40,15,.3)" }}>
         <button type="button" onClick={onClose} aria-label="Cerrar" className="absolute right-4 top-4 flex size-8 items-center justify-center rounded-full bg-[#f0e6d5] text-[14px] text-[#9a8c7c] transition-colors hover:bg-[#e6d9c4] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-terracota">✕</button>
         

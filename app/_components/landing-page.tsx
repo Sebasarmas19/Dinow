@@ -221,14 +221,12 @@ function ModalCodigoHogar({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] animate-fade-in" />
+      <div 
+        className="absolute inset-0 bg-black/40 backdrop-blur-[2px] animate-fade-in" 
+        onClick={onClose}
+      />
 
       {/* Dialog */}
       <div
