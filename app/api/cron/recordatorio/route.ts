@@ -28,14 +28,13 @@ export const dynamic = "force-dynamic";
 /**
  * Endpoint de recordatorios y notificaciones automáticas.
  *
- * Soporta 5 franjas horarias optimizadas para la Familia Armas:
- * 1. manana        (6:30 AM Caracas / 10:30 UTC): Buenos días + Misión asignada hoy
- * 2. almuerzo      (1:30 PM Caracas / 17:30 UTC): Fregado/Cocina del almuerzo
- * 3. tarde         (6:00 PM Caracas / 22:00 UTC): Tarde en casa (Paseo de Sofi / Pendientes)
- * 4. anticipacion  (8:30 PM Caracas / 00:30 UTC): Plan de mañana (para preparar viandas/descongelar)
- * 5. alerta_cierre (9:30 PM Caracas / 01:30 UTC): ⚠️ Alerta de penalización colectiva si faltan deberes
+ * Soporta 4 franjas horarias optimizadas para la Familia Armas:
+ * 1. manana        (6:30 AM Caracas): Buenos días + Misión asignada hoy
+ * 2. tarde         (6:30 PM Caracas): Tarde en casa (Paseo de Sofi / Pendientes)
+ * 3. anticipacion  (8:30 PM Caracas): Plan de mañana (para preparar viandas/descongelar)
+ * 4. alerta_cierre (9:30 PM Caracas): ⚠️ Alerta de penalización preventiva si faltan deberes
  *
- * Puede llamarse con ?slot=manana | almuerzo | tarde | anticipacion | alerta_cierre
+ * Puede llamarse con ?slot=manana | tarde | anticipacion | alerta_cierre
  * o dejar que detecte automáticamente el horario UTC actual.
  */
 export async function GET(request: Request) {
@@ -69,8 +68,6 @@ export async function GET(request: Request) {
     if (!slot) {
       if (horaCaracas >= 6 && horaCaracas < 10) {
         slot = "manana"; // 6:00 AM a 9:59 AM Caracas
-      } else if (horaCaracas >= 12 && horaCaracas < 15) {
-        slot = "almuerzo"; // 12:00 PM a 2:59 PM Caracas
       } else if (horaCaracas >= 17 && horaCaracas < 20) {
         slot = "tarde"; // 5:00 PM a 7:59 PM Caracas
       } else if (horaCaracas === 20 || (horaCaracas === 21 && minCaracas < 15)) {
@@ -89,21 +86,12 @@ export async function GET(request: Request) {
       }
     }
 
-    // Protección contra ejecuciones tardías (si GitHub Actions se retrasa horas, no enviar spam desfasado)
+    // Protección contra ejecuciones desfasadas
     if (slot === "manana" && horaCaracas >= 11) {
       return Response.json({
         success: true,
         descartado: true,
         motivo: "Recordatorio de mañana descartado por retraso de ejecución.",
-        horaCaracas: horaCaracasStr,
-        notificacionesEnviadas: 0,
-      });
-    }
-    if (slot === "almuerzo" && horaCaracas >= 16) {
-      return Response.json({
-        success: true,
-        descartado: true,
-        motivo: "Recordatorio de almuerzo descartado por retraso de ejecución.",
         horaCaracas: horaCaracasStr,
         notificacionesEnviadas: 0,
       });
@@ -174,62 +162,8 @@ export async function GET(request: Request) {
     // ──────────────────────────────────────────────────────────────────────────
     // 2. SLOT ALMUERZO (1:30 PM Caracas) - Fregado / Cocina de mediodía
     // ──────────────────────────────────────────────────────────────────────────
-    if (slot === "almuerzo") {
-      const asignacionesHoy = await db
-        .select({
-          participanteNombre: participantes.nombre,
-          participanteId: participantes.id,
-          deberNombre: deberes.nombre,
-          deberId: deberes.id,
-        })
-        .from(asignaciones)
-        .innerJoin(deberes, eq(asignaciones.deberId, deberes.id))
-        .innerJoin(
-          participantes,
-          eq(asignaciones.participanteId, participantes.id)
-        )
-        .where(
-          and(
-            eq(asignaciones.fecha, fechaHoyStr),
-            eq(deberes.activo, true),
-            sql`LOWER(${deberes.nombre}) LIKE '%cocin%' OR LOWER(${deberes.nombre}) LIKE '%freg%'`
-          )
-        );
-
-      const registrosHoy = await db
-        .select()
-        .from(registros)
-        .where(
-          and(
-            eq(registros.fecha, fechaHoyStr),
-            eq(registros.estado, "cumplido_propio")
-          )
-        );
-
-      for (const asig of asignacionesHoy) {
-        const yaCumplido = registrosHoy.some(
-          (r) => r.participanteId === asig.participanteId && r.deberId === asig.deberId
-        );
-        if (!yaCumplido) {
-          const subsDeEsteUsuario = suscripcionesValidas.filter(
-            (s) => s.participanteId === asig.participanteId
-          );
-          for (const sub of subsDeEsteUsuario) {
-            envios.push(
-              enviarPush(
-                sub,
-                `¡Hola ${asig.participanteNombre}! 🍽️ Cocina de hoy`,
-                `Recuerda dejar la cocina y los platos al día después del almuerzo.`,
-                `/${asig.participanteId}`
-              )
-            );
-          }
-        }
-      }
-    }
-
     // ──────────────────────────────────────────────────────────────────────────
-    // 3. SLOT TARDE (6:00 PM Caracas) - Regreso a casa / Paseo de Sofi / Pendientes
+    // 2. SLOT TARDE (6:30 PM Caracas) - Regreso a casa / Paseo de Sofi / Pendientes
     // ──────────────────────────────────────────────────────────────────────────
     if (slot === "tarde") {
       const asignacionesHoy = await db
@@ -294,7 +228,7 @@ export async function GET(request: Request) {
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // 4. SLOT ANTICIPACIÓN (8:30 PM Caracas) - Plan de mañana para organizarse
+    // 3. SLOT ANTICIPACIÓN (8:30 PM Caracas) - Plan de mañana para organizarse
     // ──────────────────────────────────────────────────────────────────────────
     if (slot === "anticipacion") {
       const manana = sumarDias(hoy, 1);
@@ -368,7 +302,7 @@ export async function GET(request: Request) {
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // 5. SLOT ALERTA DE CIERRE (9:30 PM Caracas) - ⚠️ Advertencia penalización
+    // 4. SLOT ALERTA DE CIERRE (9:30 PM Caracas) - ⚠️ Advertencia penalización
     // ──────────────────────────────────────────────────────────────────────────
     if (slot === "alerta_cierre") {
       const deberesObligatoriosHoy = await db
