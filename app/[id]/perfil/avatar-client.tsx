@@ -2,6 +2,7 @@
 
 import { useState, useRef, useTransition } from "react";
 import { supabase } from "@/lib/db/supabase";
+import { comprimirImagen } from "@/lib/shared/image-compression";
 import { updateFotoPerfilAction } from "@/lib/participantes/participantes.actions";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -25,12 +26,21 @@ export function AvatarClient({ participanteId, nombre, fotoUrl, borderColorClass
 
     setUploading(true);
     try {
-      const fileExt = file.name.split('.').pop();
+      // Optimización automática de avatar a WebP ligero (máx 500px)
+      const { archivo: archivoOptimizado } = await comprimirImagen(file, {
+        maxDimension: 500,
+        calidad: 0.82,
+      });
+
+      const fileExt = archivoOptimizado.name.split('.').pop() || "webp";
       const fileName = `perfiles/${participanteId}-${Date.now()}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
         .from('evidencias')
-        .upload(fileName, file);
+        .upload(fileName, archivoOptimizado, {
+          contentType: archivoOptimizado.type,
+          upsert: true,
+        });
 
       if (uploadError) {
         throw uploadError;

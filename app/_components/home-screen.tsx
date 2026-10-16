@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useTransition } from "react";
 import Link from "next/link";
 import { marcarCumplidoAction, cubrirDeberAction, reclamarExtraAction, confirmarCoberturaAction } from "@/lib/cumplimiento/cumplimiento.actions";
 import { supabase } from "@/lib/db/supabase";
+import { comprimirImagen } from "@/lib/shared/image-compression";
 import toast from "react-hot-toast";
 
 /**
@@ -555,6 +556,7 @@ export function HomeScreen({
                 fd.append("deberId", modal.extraClave);
                 fd.append("participanteId", miId);
                 if (fotoUrl) fd.append("fotoUrl", fotoUrl);
+                if (nota) fd.append("nota", nota);
                 
                 const res = await reclamarExtraAction(fd);
                 if (!res.ok) {
@@ -879,13 +881,22 @@ function DetalleDeberModal({
 
     setIsUploading(true);
     try {
-      const fileExt = file.name.split('.').pop();
+      // Optimización automática a WebP ultraligero
+      const { archivo: archivoOptimizado } = await comprimirImagen(file, {
+        maxDimension: 1280,
+        calidad: 0.78,
+      });
+
+      const fileExt = archivoOptimizado.name.split('.').pop() || "webp";
       const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
       const filePath = `${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('evidencias')
-        .upload(filePath, file);
+        .upload(filePath, archivoOptimizado, {
+          contentType: archivoOptimizado.type,
+          upsert: false,
+        });
 
       if (uploadError) {
         throw uploadError;
@@ -1062,21 +1073,25 @@ function DetalleDeberModal({
             </div>
           )}
 
-          {/* Nota opcional (solo para cubrir) */}
-          {tipo === "cubrir" && (
-            <div className="mt-5">
-              <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#b19a80]">
-                Justificación (Obligatoria)
-              </p>
-              <textarea 
-                value={nota}
-                onChange={e => setNota(e.target.value)}
-                placeholder="Ej. Le estoy haciendo el favor porque está ocupado..."
-                className="mt-2 w-full rounded-[14px] border border-[#dccdb4] bg-[#faf5eb] p-3 text-[14px] text-[#4a4039] placeholder-[#c5b090] focus-visible:outline-2 focus-visible:outline-terracota resize-none"
-                rows={2}
-              />
-            </div>
-          )}
+          {/* Campo de nota / justificación */}
+          <div className="mt-5">
+            <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#b19a80]">
+              {tipo === "cubrir"
+                ? "Justificación (Obligatoria)"
+                : "Nota o detalle adicional (Opcional)"}
+            </p>
+            <textarea 
+              value={nota}
+              onChange={(e) => setNota(e.target.value)}
+              placeholder={
+                tipo === "cubrir"
+                  ? "Ej. Le estoy haciendo el favor porque está ocupado..."
+                  : "Ej. Lavé sábanas y toallas, o dejé todo recogido..."
+              }
+              className="mt-2 w-full resize-none rounded-[14px] border border-[#dccdb4] bg-[#faf5eb] p-3 text-[14px] text-[#4a4039] placeholder-[#c5b090] focus-visible:outline-2 focus-visible:outline-terracota"
+              rows={2}
+            />
+          </div>
 
           {/* Botón de confirmación */}
           <button
