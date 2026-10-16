@@ -3,6 +3,7 @@
 import { useState, useRef, useTransition } from "react";
 import { supabase } from "@/lib/db/supabase";
 import { comprimirImagen } from "@/lib/shared/image-compression";
+import { notificarCambioHogar } from "@/lib/shared/live-sync";
 import { updateFotoPerfilAction } from "@/lib/participantes/participantes.actions";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -51,6 +52,7 @@ export function AvatarClient({ participanteId, nombre, fotoUrl, borderColorClass
       startTransition(async () => {
         const result = await updateFotoPerfilAction(participanteId, data.publicUrl);
         if (result.ok) {
+          await notificarCambioHogar("avatar_actualizado");
           router.refresh();
         } else {
           toast.error("Error guardando la foto en el perfil: " + result.error);

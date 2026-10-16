@@ -11,6 +11,8 @@ type Props = {
   searchParams?: Promise<{ cambiar?: string }>;
 };
 
+export const dynamic = "force-dynamic";
+
 /**
  * Página raíz (/) — flujo de acceso y privacidad (Opción B):
  *

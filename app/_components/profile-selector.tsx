@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { PerfilParticipante } from "../../lib/home/profile.service";
 import { salirDelHogarAction } from "@/lib/auth/auth.actions";
+import { LiveSyncGuard } from "./live-sync-guard";
 
 // ── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -18,8 +19,20 @@ type Props =
 // ── Componente principal ────────────────────────────────────────────────────
 
 export function ProfileSelector(props: Props) {
+  // Bloquear el gesto de "volver atrás" (swipe-back) cuando estás en el selector
+  // de perfiles para que nadie pueda regresar a la URL del usuario anterior sin PIN.
+  useEffect(() => {
+    window.history.pushState(null, "", window.location.href);
+    const handlePopState = () => {
+      window.history.pushState(null, "", window.location.href);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center px-4 py-10">
+      <LiveSyncGuard />
       {/* Branding sutil arriba */}
       <div className="mb-10 text-center animate-rise">
         <div
@@ -603,7 +616,7 @@ function PinModal({ user, onClose }: { user: { id: string; nombre: string }; onC
         return;
       }
 
-      window.location.href = `/${user.id}`;
+      window.location.replace(`/${user.id}`);
     } catch (err: any) {
       if (err.name === "NotAllowedError") {
         // Cancelado por el usuario, sin error rojo alarmante
@@ -637,7 +650,7 @@ function PinModal({ user, onClose }: { user: { id: string; nombre: string }; onC
       return;
     }
 
-    window.location.href = `/${user.id}`;
+    window.location.replace(`/${user.id}`);
   };
 
   return (

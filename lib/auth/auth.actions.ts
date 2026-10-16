@@ -1,6 +1,6 @@
 "use server";
 
-import { loginAdmin, loginParticipante, cerrarSesion, autorizarHogar, desautorizarHogar } from "./auth.service";
+import { loginAdmin, loginParticipante, cerrarSesion, autorizarHogar, desautorizarHogar, verificarSesionActual } from "./auth.service";
 import { exito, fallo, mensajeDeError, type Resultado } from "@/lib/shared/resultado";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -23,6 +23,7 @@ export async function validarCodigoHogarAction(formData: FormData): Promise<Resu
 export async function salirDelHogarAction(): Promise<void> {
   await cerrarSesion();
   await desautorizarHogar();
+  revalidatePath("/", "layout");
   redirect("/");
 }
 
@@ -34,6 +35,7 @@ export async function loginAdminAction(formData: FormData): Promise<Resultado<vo
     const esValido = await loginAdmin(clave);
     if (!esValido) throw new Error("Contraseña incorrecta");
     
+    revalidatePath("/", "layout");
     return exito(undefined);
   } catch (e) {
     return fallo(mensajeDeError(e));
@@ -50,6 +52,7 @@ export async function loginParticipanteAction(formData: FormData): Promise<Resul
     const esValido = await loginParticipante(id, pin);
     if (!esValido) throw new Error("PIN incorrecto");
     
+    revalidatePath("/", "layout");
     return exito(undefined);
   } catch (e) {
     return fallo(mensajeDeError(e));
@@ -58,5 +61,30 @@ export async function loginParticipanteAction(formData: FormData): Promise<Resul
 
 export async function logoutAction(): Promise<void> {
   await cerrarSesion();
+  revalidatePath("/", "layout");
   redirect("/");
 }
+
+/**
+ * Cierra la sesión actual sin redirigir desde el servidor, permitiendo al
+ * cliente ejecutar `window.location.replace("/")` para limpiar por completo
+ * el historial de navegación (evita volver atrás con el gesto de swipe).
+ */
+export async function cerrarSesionClienteAction(): Promise<{ ok: boolean }> {
+  await cerrarSesion();
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+/**
+ * Verifica desde el cliente (por ejemplo al detectar el gesto de deslizar
+ * hacia atrás o volver del BFCache en iOS) si la sesión sigue siendo válida
+ * para este participante.
+ */
+export async function verificarSesionActivaAction(participanteId: string): Promise<boolean> {
+  const sesion = await verificarSesionActual();
+  if (!sesion) return false;
+  if (sesion.rol === "admin") return true;
+  return sesion.participanteId === participanteId;
+}
+

@@ -2,9 +2,12 @@
 
 import { useState, useEffect, useRef, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { marcarCumplidoAction, cubrirDeberAction, reclamarExtraAction, confirmarCoberturaAction } from "@/lib/cumplimiento/cumplimiento.actions";
+import { cerrarSesionClienteAction } from "@/lib/auth/auth.actions";
 import { supabase } from "@/lib/db/supabase";
 import { comprimirImagen } from "@/lib/shared/image-compression";
+import { notificarCambioHogar } from "@/lib/shared/live-sync";
 import toast from "react-hot-toast";
 
 /**
@@ -125,7 +128,9 @@ export function HomeScreen({
   miId,
   deberManana,
 }: HomeScreenProps) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [isSaliendo, setIsSaliendo] = useState(false);
 
   // Modal para cubrir deberes o reclamar extras.
   const [modal, setModal] = useState<ModalData | null>(null);
@@ -136,6 +141,16 @@ export function HomeScreen({
 
   // ── Handlers ────────────────────────────────────────────────────────────
 
+  const handleCambiarPerfil = async () => {
+    setIsSaliendo(true);
+    try {
+      await cerrarSesionClienteAction();
+      window.location.replace("/");
+    } catch {
+      window.location.replace("/?cambiar=1");
+    }
+  };
+
   const marcarCumplido = (idx: number) => {
     const deber = deberesHoy[idx];
     if (deber.cumplido) return;
@@ -143,7 +158,13 @@ export function HomeScreen({
       const fd = new FormData();
       fd.append("deberId", deber.id);
       fd.append("participanteId", miId);
-      await marcarCumplidoAction(fd);
+      const res = await marcarCumplidoAction(fd);
+      if (res.ok) {
+        await notificarCambioHogar("deber_cumplido");
+        router.refresh();
+      } else {
+        toast.error("Error: " + res.error);
+      }
     });
   };
 
@@ -159,7 +180,13 @@ export function HomeScreen({
       const fd = new FormData();
       fd.append("deberId", extraClave);
       fd.append("participanteId", miId);
-      await marcarCumplidoAction(fd);
+      const res = await marcarCumplidoAction(fd);
+      if (res.ok) {
+        await notificarCambioHogar("extra_personal_cumplido");
+        router.refresh();
+      } else {
+        toast.error("Error: " + res.error);
+      }
     });
   };
 
@@ -189,52 +216,6 @@ export function HomeScreen({
     });
   };
 
-  const confirmarModal = () => {
-    if (!modal) return;
-    
-    startTransition(async () => {
-      if (modal.tipo === "cubrir" && modal.hermanoIdx !== undefined) {
-        const h = hermanos[modal.hermanoIdx];
-        const fd = new FormData();
-        fd.append("deberId", h.deberId);
-        fd.append("participanteId", miId);
-        fd.append("cubiertoA", h.participanteId);
-        if (modal.fotoUrl) fd.append("fotoUrl", modal.fotoUrl);
-        if (modal.nota) fd.append("nota", modal.nota);
-        
-        const res = await cubrirDeberAction(fd);
-        if (!res.ok) {
-          toast.error("Error: " + res.error);
-          return;
-        }
-      } else if (modal.tipo === "reclamar" && modal.extraClave) {
-        const fd = new FormData();
-        fd.append("deberId", modal.extraClave);
-        fd.append("participanteId", miId);
-        if (modal.fotoUrl) fd.append("fotoUrl", modal.fotoUrl);
-        
-        const res = await reclamarExtraAction(fd);
-        if (!res.ok) {
-          toast.error("Error: " + res.error);
-          return;
-        }
-      } else if (modal.tipo === "personal" && modal.extraClave) {
-        const fd = new FormData();
-        fd.append("deberId", modal.extraClave);
-        fd.append("participanteId", miId);
-        if (modal.fotoUrl) fd.append("fotoUrl", modal.fotoUrl);
-        if (modal.nota) fd.append("nota", modal.nota);
-        
-        const res = await marcarCumplidoAction(fd);
-        if (!res.ok) {
-          toast.error("Error: " + res.error);
-          return;
-        }
-      }
-      setModal(null);
-    });
-  };
-
   const confirmarCoberturaHero = async (registroId: string) => {
     const fd = new FormData();
     fd.append("registroId", registroId);
@@ -242,7 +223,10 @@ export function HomeScreen({
     const res = await confirmarCoberturaAction(fd);
     if (!res.ok) {
       toast.error("Error: " + res.error);
+      return;
     }
+    await notificarCambioHogar("cobertura_confirmada");
+    router.refresh();
   };
 
   // ── Puntaje derivado del estado ─────────────────────────────────────────
@@ -265,12 +249,14 @@ export function HomeScreen({
             <p className="text-[11.5px] font-bold uppercase tracking-[0.16em] text-[#b19a80]">
               {dateLabel}
             </p>
-            <Link
-              href="/?cambiar=1"
-              className="text-[11px] font-semibold text-[#a88c5a] hover:text-terracota bg-[#f8f1e5] px-2.5 py-1 rounded-full transition-colors active:scale-95 border border-[#e6d9c4]"
+            <button
+              type="button"
+              onClick={handleCambiarPerfil}
+              disabled={isSaliendo}
+              className="text-[11px] font-semibold text-[#a88c5a] hover:text-terracota bg-[#f8f1e5] px-2.5 py-1 rounded-full transition-colors active:scale-95 border border-[#e6d9c4] disabled:opacity-50"
             >
-              Cambiar perfil
-            </Link>
+              {isSaliendo ? "Saliendo..." : "Cambiar perfil"}
+            </button>
           </div>
           <h1 className="mt-[5px] text-balance font-display text-[26px] font-extrabold leading-[1.05] tracking-[-0.02em]">
             Buenas, {userName}{" "}
@@ -576,6 +562,8 @@ export function HomeScreen({
                   return;
                 }
               }
+              await notificarCambioHogar("modal_confirmado");
+              router.refresh();
               setModal(null);
             });
           }}

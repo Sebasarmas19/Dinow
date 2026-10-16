@@ -10,6 +10,9 @@ type Props = {
 };
 
 import { PushManager } from "../_components/push-manager";
+import { LiveSyncGuard } from "../_components/live-sync-guard";
+
+export const dynamic = "force-dynamic";
 
 export default async function UsuarioLayout({ children, params }: Props) {
   const { id } = await params;
@@ -30,9 +33,11 @@ export default async function UsuarioLayout({ children, params }: Props) {
 
   return (
     <div className="mx-auto min-h-screen max-w-[420px] pb-28 bg-crema">
+      <LiveSyncGuard participanteId={participanteObj.id} />
       {children}
       <BottomNavBar usuario={id} />
       <PushManager participanteId={participanteObj.id} />
     </div>
   );
 }
+

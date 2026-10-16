@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { logoutAction } from "@/lib/auth/auth.actions";
 import { obtenerHogarActualId } from "@/lib/hogar/hogar.service";
 import { listarParticipantes } from "@/lib/participantes/participantes.repo";
 import { calcularEstadisticas } from "@/lib/logros/logros.service";
@@ -14,6 +13,7 @@ import { AvatarClient } from "./avatar-client";
 import { ChangePinClient } from "./change-pin-client";
 import { BiometriaClient } from "./biometria-client";
 import { NotificacionesClient } from "./notificaciones-client";
+import { LogoutButton } from "./logout-button";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -99,14 +99,7 @@ export default async function PerfilPage({ params }: Props) {
         <h1 className="font-display text-[26px] font-extrabold text-tinta tracking-tight">
           Mi Perfil
         </h1>
-        <form action={logoutAction}>
-          <button
-            type="submit"
-            className="text-[13px] font-bold text-terracota bg-[#fbe3d0] hover:bg-[#f4c8a8] px-3 py-1.5 rounded-xl transition-colors active:scale-95"
-          >
-            Cerrar Sesión
-          </button>
-        </form>
+        <LogoutButton />
       </div>
 
       {/* Tarjeta de Encabezado de Perfil */}
