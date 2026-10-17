@@ -26,6 +26,7 @@ export type CriterioEfectivo = {
   descripcion: string;
   deberOriginalId: string;
   orden: number;
+  puntos: string;
   esRecibidoPorIntercambio: boolean;
   intercambiadoConNombre?: string;
 };
@@ -94,6 +95,7 @@ export async function obtenerCriteriosEfectivosDeDeber(
             descripcion: crit.descripcion,
             deberOriginalId: crit.deberId,
             orden: 100 + crit.orden,
+            puntos: crit.puntos,
             esRecibidoPorIntercambio: true,
             intercambiadoConNombre: otroNombre,
           });
@@ -115,6 +117,7 @@ export async function obtenerCriteriosEfectivosDeDeber(
             descripcion: crit.descripcion,
             deberOriginalId: crit.deberId,
             orden: 100 + crit.orden,
+            puntos: crit.puntos,
             esRecibidoPorIntercambio: true,
             intercambiadoConNombre: otroNombre,
           });
@@ -140,6 +143,7 @@ export async function obtenerCriteriosEfectivosDeDeber(
         descripcion: c.descripcion,
         deberOriginalId: c.deberId,
         orden: c.orden,
+        puntos: c.puntos,
         esRecibidoPorIntercambio: false,
       });
     }

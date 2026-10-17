@@ -25,6 +25,7 @@ export type HeroVariant = "plain" | "photo";
 export type CriterioEstado = {
   id: string;
   descripcion: string;
+  puntos?: number;
   completado: boolean;
   completadoPorNombre?: string;
   esPropio?: boolean;
@@ -927,7 +928,9 @@ function DeberPropioCard({
               <ul className="mt-2 space-y-1.5">
                 {detalle.map((c) => {
                   const ptsPorCriterio =
-                    Math.round((deber.puntos / totalCrit) * 100) / 100;
+                    c.puntos !== undefined && c.puntos > 0
+                      ? c.puntos
+                      : Math.round((deber.puntos / totalCrit) * 100) / 100;
                   return (
                     <li key={c.id}>
                       <button
@@ -951,15 +954,26 @@ function DeberPropioCard({
                           ✓
                         </span>
                         <div className="min-w-0 flex-1">
-                          <span
-                            className={`block text-[13.5px] font-semibold leading-[1.3] ${
-                              c.completado
-                                ? "line-through text-[#6c8a68]"
-                                : "text-[#4a4039]"
-                            }`}
-                          >
-                            {c.descripcion}
-                          </span>
+                          <div className="flex items-start justify-between gap-2">
+                            <span
+                              className={`block text-[13.5px] font-semibold leading-[1.3] ${
+                                c.completado
+                                  ? "line-through text-[#6c8a68]"
+                                  : "text-[#4a4039]"
+                              }`}
+                            >
+                              {c.descripcion}
+                            </span>
+                            <span
+                              className={`shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-extrabold ${
+                                c.completado
+                                  ? "bg-[#e3efdf] text-[#477a4e]"
+                                  : "bg-[#f4ecdd] text-[#8c704c]"
+                              }`}
+                            >
+                              {ptsPorCriterio} pts
+                            </span>
+                          </div>
                           <span className="mt-0.5 block text-[10.5px] font-bold text-[#a88c5a]">
                             {c.completado
                               ? c.esPropio
@@ -1199,6 +1213,11 @@ function ModalIntercambio({
                           ✓
                         </span>
                         <span className="flex-1 leading-snug">{c.descripcion}</span>
+                        {c.puntos !== undefined && (
+                          <span className="shrink-0 rounded-full bg-[#f4ecdd] px-2 py-0.5 text-[10px] font-extrabold text-[#8c704c]">
+                            {c.puntos} pts
+                          </span>
+                        )}
                       </button>
                     </li>
                   );
@@ -1234,6 +1253,11 @@ function ModalIntercambio({
                           ✓
                         </span>
                         <span className="flex-1 leading-snug">{c.descripcion}</span>
+                        {c.puntos !== undefined && (
+                          <span className="shrink-0 rounded-full bg-[#f4ecdd] px-2 py-0.5 text-[10px] font-extrabold text-[#8c704c]">
+                            {c.puntos} pts
+                          </span>
+                        )}
                       </button>
                     </li>
                   );
@@ -1470,10 +1494,22 @@ function DetalleDeberModal({
 
   const totalCriterios = criteriosDetalle.length;
   const totalPuntosCobertura = puntos + bonoAyuda;
+  const pesoTotalCriterios = criteriosDetalle.reduce(
+    (acc, c) => acc + (c.puntos !== undefined && c.puntos > 0 ? c.puntos : 1),
+    0,
+  );
+  const pesoSeleccionados = criteriosDetalle
+    .filter((c) => seleccionados.includes(c.id))
+    .reduce(
+      (acc, c) => acc + (c.puntos !== undefined && c.puntos > 0 ? c.puntos : 1),
+      0,
+    );
+
   const puntosCalculadosCubrir =
     totalCriterios > 0
       ? Math.round(
-          ((totalPuntosCobertura * seleccionados.length) / totalCriterios) *
+          ((totalPuntosCobertura * pesoSeleccionados) /
+            (pesoTotalCriterios || totalCriterios)) *
             100,
         ) / 100
       : totalPuntosCobertura;
@@ -1571,9 +1607,13 @@ function DetalleDeberModal({
               <ul className="mt-2 space-y-2">
                 {criteriosDetalle.map((c) => {
                   const estaMarcado = seleccionados.includes(c.id);
+                  const pesoCrit =
+                    c.puntos !== undefined && c.puntos > 0 ? c.puntos : 1;
                   const ptsUnitario =
                     Math.round(
-                      (totalPuntosCobertura / totalCriterios) * 100,
+                      ((totalPuntosCobertura * pesoCrit) /
+                        (pesoTotalCriterios || totalCriterios)) *
+                        100,
                     ) / 100;
 
                   if (c.completado) {
@@ -1622,7 +1662,7 @@ function DetalleDeberModal({
                             {c.descripcion}
                           </span>
                           <span className="mt-0.5 block text-[11px] font-bold text-[#c25a2e]">
-                            +{ptsUnitario} pts al cubrir este criterio
+                            +{ptsUnitario} pts al cubrir este criterio ({c.puntos ?? "?"} pts deber + bono)
                           </span>
                         </div>
                       </button>

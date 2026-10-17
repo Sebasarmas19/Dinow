@@ -1,6 +1,5 @@
 "use server";
 import { verificarSesionActual } from "@/lib/auth/auth.service";
-
 import { revalidatePath } from "next/cache";
 import {
   exito,
@@ -12,6 +11,7 @@ import { type Deber } from "./deberes.repo";
 import {
   crearDeber,
   type CrearDeberInput,
+  type CriterioFormInput,
   desactivarDeber,
   editarDeber,
   type EditarDeberInput,
@@ -21,9 +21,6 @@ import {
 /**
  * Server actions de deberes (gestion del admin). Leen el FormData, delegan en
  * el service y devuelven un Resultado.
- *
- * NOTA DE SEGURIDAD: accesibles por POST directo; gestionar deberes es accion
- * de admin. TODO(auth): verificar admin cuando exista el login.
  */
 
 /** Lee un checkbox del formulario: marcado = "on" o "true". */
@@ -52,18 +49,45 @@ function leerMaxReclamos(formData: FormData, campo: string): number | null {
   return Number(valor);
 }
 
+function leerCriterios(formData: FormData): CriterioFormInput[] {
+  const jsonRaw = formData.get("criteriosJson");
+  if (jsonRaw && typeof jsonRaw === "string" && jsonRaw.trim() !== "") {
+    try {
+      const parsed = JSON.parse(jsonRaw);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => ({
+          id: item.id ? String(item.id) : undefined,
+          descripcion: String(item.descripcion ?? ""),
+          puntos:
+            item.puntos !== undefined && item.puntos !== ""
+              ? Number(item.puntos)
+              : undefined,
+        }));
+      }
+    } catch {
+      // Fallback a lista de strings
+    }
+  }
+  return formData
+    .getAll("criterios")
+    .map(String)
+    .filter((c) => c.trim() !== "");
+}
+
 export async function crearDeberAction(
   formData: FormData,
 ): Promise<Resultado<Deber>> {
   const sesion = await verificarSesionActual();
   if (!sesion || sesion.rol !== "admin") {
-    return { ok: false, error: "No autorizado. Requiere permisos de administrador." } as any;
+    return {
+      ok: false,
+      error: "No autorizado. Requiere permisos de administrador.",
+    } as any;
   }
 
   try {
     const input: CrearDeberInput = {
       nombre: String(formData.get("nombre") ?? ""),
-      // El service valida estos valores en tiempo de ejecucion.
       tipoAsignacion: String(
         formData.get("tipoAsignacion") ?? "",
       ) as CrearDeberInput["tipoAsignacion"],
@@ -76,9 +100,11 @@ export async function crearDeberAction(
       diasDisponibles: leerDias(formData, "diasDisponibles"),
       maxReclamos: leerMaxReclamos(formData, "maxReclamos"),
       requiereFoto: leerBooleano(formData, "requiereFoto"),
-      asignadoA: formData.get("asignadoA") ? String(formData.get("asignadoA")) : null,
+      asignadoA: formData.get("asignadoA")
+        ? String(formData.get("asignadoA"))
+        : null,
       limitePorPersona: leerBooleano(formData, "limitePorPersona"),
-      criterios: formData.getAll("criterios").map(String).filter((c) => c.trim() !== ""),
+      criterios: leerCriterios(formData),
     };
     const deber = await crearDeber(input);
     revalidatePath("/", "layout");
@@ -93,7 +119,10 @@ export async function editarDeberAction(
 ): Promise<Resultado<Deber>> {
   const sesion = await verificarSesionActual();
   if (!sesion || sesion.rol !== "admin") {
-    return { ok: false, error: "No autorizado. Requiere permisos de administrador." } as any;
+    return {
+      ok: false,
+      error: "No autorizado. Requiere permisos de administrador.",
+    } as any;
   }
 
   try {
@@ -114,9 +143,11 @@ export async function editarDeberAction(
       diasDisponibles: leerDias(formData, "diasDisponibles"),
       maxReclamos: leerMaxReclamos(formData, "maxReclamos"),
       requiereFoto: leerBooleano(formData, "requiereFoto"),
-      asignadoA: formData.get("asignadoA") ? String(formData.get("asignadoA")) : null,
+      asignadoA: formData.get("asignadoA")
+        ? String(formData.get("asignadoA"))
+        : null,
       limitePorPersona: leerBooleano(formData, "limitePorPersona"),
-      criterios: formData.getAll("criterios").map(String).filter((c) => c.trim() !== ""),
+      criterios: leerCriterios(formData),
     };
     const deber = await editarDeber(id, input);
     revalidatePath("/", "layout");
@@ -131,7 +162,10 @@ export async function desactivarDeberAction(
 ): Promise<Resultado<Deber>> {
   const sesion = await verificarSesionActual();
   if (!sesion || sesion.rol !== "admin") {
-    return { ok: false, error: "No autorizado. Requiere permisos de administrador." } as any;
+    return {
+      ok: false,
+      error: "No autorizado. Requiere permisos de administrador.",
+    } as any;
   }
 
   try {
@@ -150,7 +184,10 @@ export async function reactivarDeberAction(
 ): Promise<Resultado<Deber>> {
   const sesion = await verificarSesionActual();
   if (!sesion || sesion.rol !== "admin") {
-    return { ok: false, error: "No autorizado. Requiere permisos de administrador." } as any;
+    return {
+      ok: false,
+      error: "No autorizado. Requiere permisos de administrador.",
+    } as any;
   }
 
   try {

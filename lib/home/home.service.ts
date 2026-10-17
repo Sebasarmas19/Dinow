@@ -110,17 +110,20 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
       ),
   ]);
 
-  // Agrupar criterios con ID y orden por asignación
+  // Agrupar criterios con ID, orden y puntos por asignación
   const deberesAgrupados = new Map<
     string,
     {
       asignacion: typeof asignaciones.$inferSelect;
       deber: typeof deberes.$inferSelect;
-      criterios: { id: string; descripcion: string; orden: number }[];
+      criterios: { id: string; descripcion: string; orden: number; puntos: number }[];
     }
   >();
 
-  const mapaTodosCriterios = new Map<string, { id: string; descripcion: string; deberId: string; orden: number }>();
+  const mapaTodosCriterios = new Map<
+    string,
+    { id: string; descripcion: string; deberId: string; orden: number; puntos: number }
+  >();
 
   for (const fila of asignacionesHoy) {
     const key = fila.asignacion.id;
@@ -132,16 +135,19 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
       });
     }
     if (fila.criterio) {
+      const ptsCrit = Number(fila.criterio.puntos ?? 0);
       deberesAgrupados.get(key)!.criterios.push({
         id: fila.criterio.id,
         descripcion: fila.criterio.descripcion,
         orden: fila.criterio.orden,
+        puntos: ptsCrit,
       });
       mapaTodosCriterios.set(fila.criterio.id, {
         id: fila.criterio.id,
         descripcion: fila.criterio.descripcion,
         deberId: fila.deber.id,
         orden: fila.criterio.orden,
+        puntos: ptsCrit,
       });
     }
   }
@@ -164,12 +170,13 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
   function obtenerCriteriosEfectivosLocal(
     deberId: string,
     participanteId: string,
-    criteriosOriginales: { id: string; descripcion: string; orden: number }[],
+    criteriosOriginales: { id: string; descripcion: string; orden: number; puntos: number }[],
   ) {
     const cedidosMap = new Map<string, string>();
     const recibidos: {
       id: string;
       descripcion: string;
+      puntos: number;
       esIntercambiado: boolean;
       intercambiadoConNombre: string;
     }[] = [];
@@ -189,6 +196,7 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
             recibidos.push({
               id: c.id,
               descripcion: c.descripcion,
+              puntos: c.puntos,
               esIntercambiado: true,
               intercambiadoConNombre: otroNombre,
             });
@@ -206,6 +214,7 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
             recibidos.push({
               id: c.id,
               descripcion: c.descripcion,
+              puntos: c.puntos,
               esIntercambiado: true,
               intercambiadoConNombre: otroNombre,
             });
@@ -217,13 +226,18 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
     const efectivos: {
       id: string;
       descripcion: string;
+      puntos: number;
       esIntercambiado?: boolean;
       intercambiadoConNombre?: string;
     }[] = [];
 
     for (const c of criteriosOriginales) {
       if (!cedidosMap.has(c.id)) {
-        efectivos.push({ id: c.id, descripcion: c.descripcion });
+        efectivos.push({
+          id: c.id,
+          descripcion: c.descripcion,
+          puntos: c.puntos,
+        });
       }
     }
     for (const r of recibidos) {
@@ -239,7 +253,7 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
   function evaluarEstadoDeber(
     deberObj: typeof deberes.$inferSelect,
     duenoId: string,
-    criteriosOriginales: { id: string; descripcion: string; orden: number }[],
+    criteriosOriginales: { id: string; descripcion: string; orden: number; puntos: number }[],
   ) {
     const criteriosRaw = obtenerCriteriosEfectivosLocal(
       deberObj.id,
@@ -251,6 +265,13 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
       (r) =>
         r.deberId === deberObj.id &&
         (r.estado === "cumplido_propio" || r.estado === "cubrio_a_otro"),
+    );
+
+    const puntosTotalesDeber = Number(deberObj.puntos);
+    const pesoDe = (pts: number) => (Number.isFinite(pts) && pts > 0 ? pts : 1);
+    const pesoTotalEfectivo = criteriosRaw.reduce(
+      (acc, c) => acc + pesoDe(c.puntos),
+      0,
     );
 
     const criteriosDetalle: CriterioEstado[] = criteriosRaw.map((c) => {
@@ -267,9 +288,17 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
         }
       }
 
+      const ptsEfectivos =
+        pesoTotalEfectivo > 0
+          ? Math.round(
+              (pesoDe(c.puntos) / pesoTotalEfectivo) * puntosTotalesDeber * 10,
+            ) / 10
+          : c.puntos;
+
       return {
         id: c.id,
         descripcion: c.descripcion,
+        puntos: ptsEfectivos,
         completado: Boolean(completadoPorId),
         completadoPorNombre: completadoPorId
           ? mapaNombres.get(completadoPorId) || "Alguien"
@@ -297,9 +326,15 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
       tieneAlgunAvance = completadosCount > 0;
     }
 
+    const pesoPropioCumplido = criteriosDetalle
+      .filter((c) => c.completado && c.esPropio)
+      .reduce((acc, c) => acc + (c.puntos ?? 1), 0);
+
     const fraccionPropia =
       totalCriterios > 0
-        ? propiosCount / totalCriterios
+        ? puntosTotalesDeber > 0
+          ? pesoPropioCumplido / puntosTotalesDeber
+          : propiosCount / totalCriterios
         : regsDeber.some(
               (r) =>
                 r.estado === "cumplido_propio" && r.participanteId === duenoId,
@@ -308,7 +343,7 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
           : 0;
 
     const puntosGanadosDueno =
-      Math.round(Number(deberObj.puntos) * fraccionPropia * 100) / 100;
+      Math.round(puntosTotalesDeber * fraccionPropia * 100) / 100;
 
     return {
       criteriosDetalle,
@@ -343,7 +378,7 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
   const misPersonalesList: {
     asignacion: typeof asignaciones.$inferSelect;
     deber: typeof deberes.$inferSelect;
-    criterios: { id: string; descripcion: string; orden: number }[];
+    criterios: { id: string; descripcion: string; orden: number; puntos: number }[];
   }[] = [];
 
   const miAsignacionRotativa = Array.from(deberesAgrupados.values()).find(

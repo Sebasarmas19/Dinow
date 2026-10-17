@@ -232,7 +232,17 @@ export async function marcarCumplido(input: {
     });
   }
 
-  const fraccion = nuevosTotales.length / criterios.length;
+  const pesoDe = (pts: string | number | null | undefined) => {
+    const n = Number(pts ?? 0);
+    return Number.isFinite(n) && n > 0 ? n : 1;
+  };
+  const pesoTotal = criterios.reduce((acc, c) => acc + pesoDe(c.puntos), 0);
+  const setNuevos = new Set(nuevosTotales);
+  const pesoCumplido = criterios
+    .filter((c) => setNuevos.has(c.id))
+    .reduce((acc, c) => acc + pesoDe(c.puntos), 0);
+
+  const fraccion = pesoTotal > 0 ? pesoCumplido / pesoTotal : nuevosTotales.length / criterios.length;
   if (deber.esPersonal) {
     await otorgarReclamable(registro, deber.puntos, fraccion);
   } else {
@@ -457,7 +467,19 @@ async function intentarOtorgarBono(cobertura: Registro): Promise<void> {
 
   let fraccion = 1;
   if (criterios.length > 0 && cobertura.criteriosIds !== null) {
-    fraccion = cobertura.criteriosIds.length / criterios.length;
+    const pesoDe = (pts: string | number | null | undefined) => {
+      const n = Number(pts ?? 0);
+      return Number.isFinite(n) && n > 0 ? n : 1;
+    };
+    const pesoTotal = criterios.reduce((acc, c) => acc + pesoDe(c.puntos), 0);
+    const setCubiertos = new Set(cobertura.criteriosIds);
+    const pesoCubierto = criterios
+      .filter((c) => setCubiertos.has(c.id))
+      .reduce((acc, c) => acc + pesoDe(c.puntos), 0);
+    fraccion =
+      pesoTotal > 0
+        ? pesoCubierto / pesoTotal
+        : cobertura.criteriosIds.length / criterios.length;
   }
 
   await otorgarBonoAyuda(cobertura, deber.puntos, bono, fraccion);

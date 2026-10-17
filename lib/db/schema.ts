@@ -179,6 +179,7 @@ export const criteriosDeber = pgTable("criterios_deber", {
     .references(() => deberes.id, { onDelete: "cascade" }),
   descripcion: text("descripcion").notNull(),
   orden: integer("orden").notNull().default(0),
+  puntos: numeric("puntos").notNull().default("0"),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

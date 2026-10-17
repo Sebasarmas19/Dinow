@@ -166,6 +166,18 @@ export async function cerrarDia(
       ...criteriosCubiertosPorOtros,
     ]);
 
+    const pesoDe = (pts: string | number | null | undefined) => {
+      const n = Number(pts ?? 0);
+      return Number.isFinite(n) && n > 0 ? n : 1;
+    };
+    const pesoTotal = criteriosDeberActual.reduce(
+      (acc, c) => acc + pesoDe(c.puntos),
+      0,
+    );
+    const pesoFaltante = criteriosDeberActual
+      .filter((c) => !criteriosTotalesCumplidos.has(c.id))
+      .reduce((acc, c) => acc + pesoDe(c.puntos), 0);
+
     const kPropio = criteriosHechosPorDueno.size;
     const faltantes = Math.max(0, totalCriterios - criteriosTotalesCumplidos.size);
 
@@ -175,15 +187,17 @@ export async function cerrarDia(
       continue;
     }
 
+    const fraccionFaltante =
+      pesoTotal > 0 ? pesoFaltante / pesoTotal : faltantes / totalCriterios;
+
     // Penalización individual al responsable (salvo ausencia válida):
     // - Si el dueño no hizo NADA (kPropio === 0), recibe la penalización completa (-15 pts),
     //   incluso si un hermano tuvo que cubrirle el 100% del deber (Art. 5.1).
-    // - Si el dueño hizo parte (kPropio > 0) pero dejó `faltantes` criterios sin hacer,
-    //   recibe la penalización proporcional a los criterios faltantes: -(faltantes / totalCriterios) * penalizacionFallo.
+    // - Si el dueño hizo parte (kPropio > 0) pero dejó criterios sin hacer,
+    //   recibe la penalización proporcional al peso de los criterios faltantes.
     if (!ausentes.has(asignacion.participanteId)) {
-      const fraccionFallo =
-        kPropio === 0 ? 1 : faltantes / totalCriterios;
-      const montoPenalizacion = penalizacionFallo * fraccionFallo;
+      const fraccionFallo = kPropio === 0 ? 1 : fraccionFaltante;
+      const montoPenalizacion = Math.round(penalizacionFallo * fraccionFallo * 100) / 100;
       if (montoPenalizacion > 0) {
         await otorgarPenalizacionFallo(
           hogarId,
@@ -197,15 +211,15 @@ export async function cerrarDia(
 
     // Penalización colectiva (Art. 5.2): si es obligatorio y quedan criterios sin hacer por nadie
     if (deber.esObligatorio && faltantes > 0) {
-      const fraccionColectiva = faltantes / totalCriterios;
-      const montoColectivo = penalizacionColectiva * fraccionColectiva;
+      const montoColectivo =
+        Math.round(penalizacionColectiva * fraccionFaltante * 100) / 100;
       for (const p of participantesActivos) {
         if (ausentes.has(p.id)) continue;
         await otorgarPenalizacionColectiva(
           hogarId,
           p.id,
           fechaStr,
-          Math.round(montoColectivo * 100) / 100,
+          montoColectivo,
         );
         aplicadas++;
       }

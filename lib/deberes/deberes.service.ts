@@ -42,6 +42,14 @@ const DIAS_SEMANA: readonly string[] = [
   "domingo",
 ];
 
+export type CriterioFormInput =
+  | string
+  | {
+      id?: string;
+      descripcion: string;
+      puntos?: number;
+    };
+
 export type CrearDeberInput = {
   nombre: string;
   tipoAsignacion: TipoAsignacion;
@@ -56,11 +64,77 @@ export type CrearDeberInput = {
   requiereFoto?: boolean;
   asignadoA?: string | null;
   limitePorPersona?: boolean;
-  // Lista de descripciones de los criterios
-  criterios?: string[];
+  // Lista de criterios (puede ser texto simple o { id, descripcion, puntos })
+  criterios?: CriterioFormInput[];
 };
 
 export type EditarDeberInput = Partial<CrearDeberInput>;
+
+function normalizarYValidarCriterios(
+  criterios: CriterioFormInput[],
+  puntosDeber: number,
+): Array<{ id?: string; descripcion: string; orden: number; puntos: string }> {
+  const limpios = criterios
+    .map((item) => {
+      if (typeof item === "string") {
+        return {
+          id: undefined,
+          descripcion: item.trim(),
+          puntos: undefined as number | undefined,
+        };
+      }
+      return {
+        id: item.id?.trim() || undefined,
+        descripcion: item.descripcion?.trim() || "",
+        puntos:
+          item.puntos !== undefined && Number.isFinite(Number(item.puntos))
+            ? Number(item.puntos)
+            : undefined,
+      };
+    })
+    .filter((c) => c.descripcion !== "");
+
+  if (limpios.length === 0) return [];
+
+  const todosTienenPuntos = limpios.every(
+    (c) => c.puntos !== undefined && c.puntos > 0,
+  );
+
+  if (todosTienenPuntos) {
+    const suma = Math.round(
+      limpios.reduce((acc, c) => acc + (c.puntos ?? 0), 0) * 100,
+    ) / 100;
+    const esperado = Math.round(puntosDeber * 100) / 100;
+    if (Math.abs(suma - esperado) > 0.05) {
+      throw new Error(
+        `La suma de los puntos de los criterios (${suma} pts) debe ser igual al puntaje total del deber (${esperado} pts).`,
+      );
+    }
+    return limpios.map((c, idx) => ({
+      id: c.id,
+      descripcion: c.descripcion,
+      orden: idx + 1,
+      puntos: String(Math.round((c.puntos ?? 0) * 100) / 100),
+    }));
+  }
+
+  // Fallback equitativo si no se enviaron puntos individuales
+  const base = Math.floor((puntosDeber / limpios.length) * 100) / 100;
+  let acumulado = 0;
+  return limpios.map((c, idx) => {
+    const esUltimo = idx === limpios.length - 1;
+    const pts = esUltimo
+      ? Math.round((puntosDeber - acumulado) * 100) / 100
+      : base;
+    acumulado += pts;
+    return {
+      id: c.id,
+      descripcion: c.descripcion,
+      orden: idx + 1,
+      puntos: String(pts),
+    };
+  });
+}
 
 /** Lista los deberes del hogar actual (por defecto solo activos). */
 export async function listarDeberes(opciones?: {
@@ -148,6 +222,10 @@ export async function crearDeber(input: CrearDeberInput): Promise<Deber> {
       ? DIAS_SEMANA.slice()
       : validarDiasDisponibles(input.diasDisponibles);
 
+  const nuevosCriterios = input.criterios
+    ? normalizarYValidarCriterios(input.criterios, input.puntos)
+    : null;
+
   const hogarId = await obtenerHogarActualId();
 
   const deber = await insertarDeber({
@@ -165,11 +243,7 @@ export async function crearDeber(input: CrearDeberInput): Promise<Deber> {
     limitePorPersona: input.limitePorPersona ?? false,
   });
 
-  if (input.criterios) {
-    const nuevosCriterios = input.criterios.map((desc, idx) => ({
-      descripcion: desc,
-      orden: idx,
-    }));
+  if (nuevosCriterios) {
     await reemplazarCriterios(deber.id, nuevosCriterios);
   }
 
@@ -232,14 +306,17 @@ export async function editarDeber(
     cambios.limitePorPersona = input.limitePorPersona;
   }
 
+  const puntosFinales =
+    input.puntos !== undefined ? input.puntos : Number(existente.puntos);
+  const nuevosCriterios =
+    input.criterios !== undefined
+      ? normalizarYValidarCriterios(input.criterios, puntosFinales)
+      : undefined;
+
   const actualizado = await actualizarDeber(id, cambios);
   if (!actualizado) throw new Error("No se pudo actualizar el deber.");
 
-  if (input.criterios !== undefined) {
-    const nuevosCriterios = input.criterios.map((desc, idx) => ({
-      descripcion: desc,
-      orden: idx,
-    }));
+  if (nuevosCriterios !== undefined) {
     await reemplazarCriterios(id, nuevosCriterios);
   }
 
