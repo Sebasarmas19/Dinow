@@ -33,6 +33,8 @@ export default async function UsuarioHome({ params }: Props) {
         puntosBase={data.puntosBase}
         posicionLabel={data.posicionLabel}
         deberManana={data.deberManana}
+        intercambiosPendientes={data.intercambiosPendientes}
+        bonoAyuda={data.bonoAyuda}
       />
     );
   } catch {

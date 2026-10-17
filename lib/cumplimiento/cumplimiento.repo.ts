@@ -77,6 +77,56 @@ export async function buscarRegistro(
   return fila;
 }
 
+/** Busca una cobertura existente de un participante hacia otro para un deber y fecha. */
+export async function buscarRegistroCobertura(
+  deberId: string,
+  participanteId: string,
+  cubiertoA: string,
+  fechaStr: string,
+): Promise<Registro | undefined> {
+  const [fila] = await db
+    .select()
+    .from(registros)
+    .where(
+      and(
+        eq(registros.deberId, deberId),
+        eq(registros.participanteId, participanteId),
+        eq(registros.cubiertoA, cubiertoA),
+        eq(registros.fecha, fechaStr),
+        eq(registros.estado, "cubrio_a_otro"),
+      ),
+    )
+    .limit(1);
+  return fila;
+}
+
+/** Lista todos los registros de un deber en una fecha (cumplido_propio y cubrio_a_otro). */
+export async function listarRegistrosDeDeberEnFecha(
+  deberId: string,
+  fechaStr: string,
+): Promise<Registro[]> {
+  return db
+    .select()
+    .from(registros)
+    .where(and(eq(registros.deberId, deberId), eq(registros.fecha, fechaStr)));
+}
+
+/** Lista las asignaciones de un participante en una fecha. */
+export async function listarAsignacionesDeParticipante(
+  participanteId: string,
+  fechaStr: string,
+) {
+  return db
+    .select()
+    .from(asignaciones)
+    .where(
+      and(
+        eq(asignaciones.participanteId, participanteId),
+        eq(asignaciones.fecha, fechaStr),
+      ),
+    );
+}
+
 /** Devuelve un registro por id (o undefined). */
 export async function obtenerRegistroPorId(
   id: string,
@@ -90,8 +140,7 @@ export async function obtenerRegistroPorId(
 }
 
 /**
- * ¿La persona ya cumplió SU PROPIO deber ese día? Requisito para que un bono
- * por cubrir a otro se otorgue (Art. 3 del reglamento).
+ * ¿La persona ya tiene un registro propio ese día?
  */
 export async function existeCumplidoPropio(
   participanteId: string,

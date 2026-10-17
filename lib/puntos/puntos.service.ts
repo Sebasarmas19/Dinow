@@ -1,5 +1,6 @@
 import {
-  contarTransacciones,
+  actualizarCantidadTransaccion,
+  buscarTransaccion,
   insertarTransaccion,
   type NuevaTransaccion,
   type Transaccion,
@@ -28,33 +29,47 @@ type RegistroBase = {
   fecha: string;
 };
 
+/** Redondea a máximo 2 decimales limpios (ej. 3.33, 7.5, 10). */
+export function redondearPuntos(valor: number): string {
+  return String(Math.round(valor * 100) / 100);
+}
+
 /**
- * Inserta una transacción de forma IDEMPOTENTE: si ya existe una del mismo
- * registro y tipo, no hace nada y devuelve null. Así, aunque el flujo se
- * dispare dos veces, los puntos no se duplican.
+ * Inserta o sincroniza una transacción de forma IDEMPOTENTE para un registro:
+ * si ya existe una del mismo registro y tipo, actualiza su cantidad si cambió
+ * (por ejemplo, cuando el participante completa más criterios del mismo deber
+ * durante el día) o no hace nada si ya tiene el mismo valor.
  */
 async function registrarUnaVez(
   valores: NuevaTransaccion,
 ): Promise<Transaccion | null> {
   if (valores.registroId) {
-    const yaExiste = await contarTransacciones(valores.registroId, valores.tipo);
-    if (yaExiste > 0) return null;
+    const existente = await buscarTransaccion(valores.registroId, valores.tipo);
+    if (existente) {
+      if (Number(existente.cantidad) !== Number(valores.cantidad)) {
+        return actualizarCantidadTransaccion(existente.id, valores.cantidad);
+      }
+      return null;
+    }
   }
   return insertarTransaccion(valores);
 }
 
 /**
- * Cumplir el deber propio: suma los puntos del deber. Afecta General y Confiable.
+ * Cumplir el deber propio: suma los puntos del deber (o fracción proporcional).
+ * Afecta General y Confiable.
  */
 export async function otorgarCumplimiento(
   registro: RegistroBase,
   puntosDeber: string,
+  fraccion: number = 1,
 ): Promise<Transaccion | null> {
+  const cantidad = redondearPuntos(Number(puntosDeber) * fraccion);
   return registrarUnaVez({
     hogarId: registro.hogarId,
     participanteId: registro.participanteId,
     registroId: registro.id,
-    cantidad: puntosDeber,
+    cantidad,
     tipo: "cumplimiento",
     fecha: registro.fecha,
   });
@@ -66,33 +81,37 @@ export async function otorgarCumplimiento(
 export async function otorgarReclamable(
   registro: RegistroBase,
   puntosDeber: string,
+  fraccion: number = 1,
 ): Promise<Transaccion | null> {
+  const cantidad = redondearPuntos(Number(puntosDeber) * fraccion);
   return registrarUnaVez({
     hogarId: registro.hogarId,
     participanteId: registro.participanteId,
     registroId: registro.id,
-    cantidad: puntosDeber,
+    cantidad,
     tipo: "reclamable",
     fecha: registro.fecha,
   });
 }
 
 /**
- * Bono por cubrir a otro: suma los puntos del deber MÁS el bono de ayuda del
- * hogar. Afecta General y Solidario. El que llama (cumplimiento.service) ya
- * verificó que el participante hizo su propio deber y que el ayudado confirmó.
+ * Bono por cubrir a otro: suma la fracción proporcional de (puntos del deber MÁS
+ * el bono de ayuda del hogar). Afecta General y Solidario. El que llama
+ * (cumplimiento.service) ya verificó que el participante hizo su propio deber.
  */
 export async function otorgarBonoAyuda(
   registro: RegistroBase,
   puntosDeber: string,
   bonoAyuda: number,
+  fraccion: number = 1,
 ): Promise<Transaccion | null> {
-  const cantidad = Number(puntosDeber) + bonoAyuda;
+  const totalBase = Number(puntosDeber) + bonoAyuda;
+  const cantidad = redondearPuntos(totalBase * fraccion);
   return registrarUnaVez({
     hogarId: registro.hogarId,
     participanteId: registro.participanteId,
     registroId: registro.id,
-    cantidad: String(cantidad),
+    cantidad,
     tipo: "bono_ayuda",
     fecha: registro.fecha,
   });
@@ -114,7 +133,7 @@ export async function otorgarPenalizacionFallo(
     hogarId,
     participanteId,
     registroId: null,
-    cantidad: String(-Math.abs(monto)),
+    cantidad: redondearPuntos(-Math.abs(monto)),
     tipo: "penalizacion",
     fecha: fechaStr,
   });

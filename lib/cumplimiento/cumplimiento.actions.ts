@@ -41,9 +41,15 @@ export async function marcarCumplidoAction(
       throw new Error("No autorizado. Inicie sesión con su PIN.");
     }
 
+    const criteriosRaw = formData
+      .getAll("criteriosIds")
+      .map((v) => String(v).trim())
+      .filter(Boolean);
+
     const registro = await marcarCumplido({
       deberId: requerir(formData, "deberId"),
       participanteId: pId,
+      criteriosIds: criteriosRaw.length > 0 ? criteriosRaw : undefined,
       fotoUrl: formData.get("fotoUrl") ? String(formData.get("fotoUrl")) : null,
       nota: formData.get("nota") ? String(formData.get("nota")) : null,
     });
@@ -64,10 +70,16 @@ export async function cubrirDeberAction(
       throw new Error("No autorizado. Inicie sesión con su PIN.");
     }
 
+    const criteriosRaw = formData
+      .getAll("criteriosIds")
+      .map((v) => String(v).trim())
+      .filter(Boolean);
+
     const registro = await cubrirDeber({
       deberId: requerir(formData, "deberId"),
       participanteId: pId,
       cubiertoA: requerir(formData, "cubiertoA"),
+      criteriosIds: criteriosRaw.length > 0 ? criteriosRaw : undefined,
       nota: formData.get("nota") ? String(formData.get("nota")) : null,
       fotoUrl: formData.get("fotoUrl") ? String(formData.get("fotoUrl")) : null,
     });

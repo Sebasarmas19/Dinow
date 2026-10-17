@@ -1,42 +1,44 @@
 "use client";
 
 import { useState, useEffect, useRef, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { marcarCumplidoAction, cubrirDeberAction, reclamarExtraAction, confirmarCoberturaAction } from "@/lib/cumplimiento/cumplimiento.actions";
+import {
+  marcarCumplidoAction,
+  cubrirDeberAction,
+  reclamarExtraAction,
+  confirmarCoberturaAction,
+} from "@/lib/cumplimiento/cumplimiento.actions";
+import {
+  solicitarIntercambioAction,
+  responderIntercambioAction,
+  cancelarIntercambioAction,
+} from "@/lib/intercambio/intercambio.actions";
 import { cerrarSesionClienteAction } from "@/lib/auth/auth.actions";
 import { supabase } from "@/lib/db/supabase";
 import { comprimirImagen } from "@/lib/shared/image-compression";
 import { notificarCambioHogar } from "@/lib/shared/live-sync";
 import toast from "react-hot-toast";
 
-/**
- * Pantalla principal (HomeScreen) — rediseño.
- *
- * Cambios clave respecto a la versión anterior:
- * 1. Cada deber propio tiene su botón "Marcar como cumplido" DENTRO de la
- *    tarjeta, lo que permite soportar múltiples deberes sin ambigüedad.
- * 2. Los criterios de aceptación se muestran como REFERENCIA (texto), no como
- *    checkboxes interactivos. Marcar como cumplido ya implica que se cumplieron.
- * 3. "Cubrir su deber" abre un modal (bottom sheet) con los detalles del deber,
- *    sus criterios y un botón de confirmación. No pide foto (son obligatorios).
- * 4. "Reclamar" un extra también abre el modal, pero con un paso previo de
- *    "Subir foto" (los extras sí requieren foto). El botón de confirmar se
- *    habilita solo después de subir la foto.
- * 5. La sección de extras se llama "Extras de la semana" (no del fin de semana)
- *    porque el admin decide qué días aparecen.
- */
-
 // ── Tipos exportados ────────────────────────────────────────────────────────
 
 export type HeroVariant = "plain" | "photo";
+
+export type CriterioEstado = {
+  id: string;
+  descripcion: string;
+  completado: boolean;
+  completadoPorNombre?: string;
+  esPropio?: boolean;
+};
 
 export type DeberHoy = {
   id: string;
   nombre: string;
   icono: string;
   puntos: number;
+  puntosGanadosHoy?: number;
   criterios: string[];
+  criteriosDetalle?: CriterioEstado[];
   cumplido: boolean;
   cubiertoPor?: {
     registroId: string;
@@ -48,24 +50,22 @@ export type DeberHoy = {
 export type HermanoEstado = {
   participanteId: string;
   cobertura?: "bonus" | "nobonus" | "cubierto_por_otro";
+  coberturaPuntosGanados?: number;
   nombre: string;
-  /** Etiqueta visible del rol, p. ej. "Cocina hoy" o "Tú · Sofi". */
   rol: string;
   emoji?: string;
   fotoUrl: string | null;
   esYo: boolean;
   cumplido: boolean;
-  /** Nombre completo del deber para el modal, p. ej. "Cocinar". */
   deberNombre: string;
-  /** UUID del deber */
   deberId: string;
-  /** Puntos del deber asignado. */
   deberPuntos: number;
-  /** Criterios de aceptación del deber (se muestran en el modal). */
   deberCriterios: string[];
-  /** Anillo de color alrededor del emoji (estilo del diseño). */
+  deberCriteriosDetalle?: CriterioEstado[];
+  criteriosCompletados?: number;
+  criteriosTotales?: number;
+  puedeIntercambiar?: boolean;
   ringStyle: string;
-  /** Estilo de la tarjeta (resalta al "yo"). */
   cardStyle: string;
 };
 
@@ -76,11 +76,22 @@ export type ExtraSemana = {
   label: string;
   meta: string;
   puntos: number;
-  /** Criterios de aceptación (se muestran en el modal al reclamar). */
-  /** Criterios de aceptación (se muestran en el modal al reclamar). */
   criterios: string[];
   esPersonal?: boolean;
   requiereFoto?: boolean;
+};
+
+export type SolicitudIntercambioUI = {
+  id: string;
+  solicitanteId: string;
+  solicitanteNombre: string;
+  destinatarioId: string;
+  destinatarioNombre: string;
+  deberSolicitanteNombre: string;
+  deberSolicitanteIcono: string;
+  deberDestinatarioNombre: string;
+  deberDestinatarioIcono: string;
+  esRecibida: boolean;
 };
 
 export type HomeScreenProps = {
@@ -88,25 +99,26 @@ export type HomeScreenProps = {
   variant?: HeroVariant;
   userName: string;
   dateLabel: string;
-  /** Deberes obligatorios del día para el usuario. Puede haber más de uno. */
   deberesHoy: DeberHoy[];
   hermanos: HermanoEstado[];
   extras: ExtraSemana[];
   puntosBase: number;
   posicionLabel: string;
   deberManana?: { nombre: string; icono: string; puntos: number } | null;
+  intercambiosPendientes?: SolicitudIntercambioUI[];
+  bonoAyuda?: number;
 };
 
 // ── Tipos internos ──────────────────────────────────────────────────────────
-
-type EstadoCobertura = "bonus" | "nobonus";
 
 type ModalData = {
   tipo: "cubrir" | "reclamar" | "personal";
   nombre: string;
   emoji: string;
   puntos: number;
+  bonoAyuda?: number;
   criterios: string[];
+  criteriosDetalle?: CriterioEstado[];
   hermanoIdx?: number;
   extraClave?: string;
   fotoUrl?: string;
@@ -127,15 +139,15 @@ export function HomeScreen({
   posicionLabel,
   miId,
   deberManana,
+  intercambiosPendientes = [],
+  bonoAyuda = 5,
 }: HomeScreenProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isSaliendo, setIsSaliendo] = useState(false);
 
-  // Modal para cubrir deberes o reclamar extras.
   const [modal, setModal] = useState<ModalData | null>(null);
 
-  // ¿Todos mis deberes del día están cumplidos? (necesario para el bono).
   const todosMisDeberesCumplidos =
     deberesHoy.length > 0 && deberesHoy.every((d) => d.cumplido);
 
@@ -151,6 +163,7 @@ export function HomeScreen({
     }
   };
 
+  /** Marca todos los criterios restantes del deber de una sola vez */
   const marcarCumplido = (idx: number) => {
     const deber = deberesHoy[idx];
     if (deber.cumplido) return;
@@ -160,6 +173,7 @@ export function HomeScreen({
       fd.append("participanteId", miId);
       const res = await marcarCumplidoAction(fd);
       if (res.ok) {
+        toast.success("¡Deber completado!");
         await notificarCambioHogar("deber_cumplido");
         router.refresh();
       } else {
@@ -168,21 +182,19 @@ export function HomeScreen({
     });
   };
 
-  const deshacerCumplido = (idx: number) => {
-    // La BD no permite "deshacer" directamente a los usuarios (solo el admin).
-    toast.error("No se puede deshacer un deber. Si te equivocaste, avisa al admin.");
-  };
-
-  const marcarExtraPersonalCumplido = (extraClave: string) => {
-    const extra = extras.find(e => e.clave === extraClave);
-    if (extra?.reclamadoHoy) return;
+  /** Marca un criterio individual de tu propio deber en tiempo real */
+  const marcarCriterioPropio = (idx: number, criterioId: string) => {
+    const deber = deberesHoy[idx];
+    if (deber.cumplido) return;
     startTransition(async () => {
       const fd = new FormData();
-      fd.append("deberId", extraClave);
+      fd.append("deberId", deber.id);
       fd.append("participanteId", miId);
+      fd.append("criteriosIds", criterioId);
       const res = await marcarCumplidoAction(fd);
       if (res.ok) {
-        await notificarCambioHogar("extra_personal_cumplido");
+        toast.success("✓ Criterio guardado");
+        await notificarCambioHogar("criterio_cumplido");
         router.refresh();
       } else {
         toast.error("Error: " + res.error);
@@ -196,8 +208,10 @@ export function HomeScreen({
       tipo: "cubrir",
       nombre: h.deberNombre,
       emoji: h.emoji || "✨",
-      puntos: 15, // cubrir siempre vale 15
+      puntos: h.deberPuntos || 10,
+      bonoAyuda,
       criterios: h.deberCriterios,
+      criteriosDetalle: h.deberCriteriosDetalle,
       hermanoIdx,
     });
   };
@@ -216,23 +230,50 @@ export function HomeScreen({
     });
   };
 
-  const confirmarCoberturaHero = async (registroId: string) => {
-    const fd = new FormData();
-    fd.append("registroId", registroId);
-    fd.append("participanteId", miId);
-    const res = await confirmarCoberturaAction(fd);
-    if (!res.ok) {
-      toast.error("Error: " + res.error);
-      return;
-    }
-    await notificarCambioHogar("cobertura_confirmada");
-    router.refresh();
+  const handlePedirIntercambio = (destinatarioId: string, nombreHermano: string) => {
+    startTransition(async () => {
+      const res = await solicitarIntercambioAction(miId, destinatarioId);
+      if (res.ok) {
+        toast.success(`Petición de intercambio enviada a ${nombreHermano}`);
+        await notificarCambioHogar("intercambio_solicitado");
+        router.refresh();
+      } else {
+        toast.error(res.error);
+      }
+    });
   };
 
-  // ── Puntaje derivado del estado ─────────────────────────────────────────
+  const handleResponderIntercambio = (solicitudId: string, aceptar: boolean) => {
+    startTransition(async () => {
+      const res = await responderIntercambioAction(solicitudId, miId, aceptar);
+      if (res.ok) {
+        toast.success(
+          aceptar
+            ? "🔄 ¡Intercambio aceptado! Se actualizaron los deberes de hoy."
+            : "Solicitud de intercambio rechazada.",
+        );
+        await notificarCambioHogar("intercambio_respondido");
+        router.refresh();
+      } else {
+        toast.error(res.error);
+      }
+    });
+  };
 
-  // El backend ya lo calculó y lo trae listo en puntosBase
-  let puntosMes = puntosBase;
+  const handleCancelarIntercambio = (solicitudId: string) => {
+    startTransition(async () => {
+      const res = await cancelarIntercambioAction(solicitudId, miId);
+      if (res.ok) {
+        toast.success("Petición cancelada.");
+        await notificarCambioHogar("intercambio_cancelado");
+        router.refresh();
+      } else {
+        toast.error(res.error);
+      }
+    });
+  };
+
+  const puntosMes = puntosBase;
 
   // ── Render ──────────────────────────────────────────────────────────────
 
@@ -240,7 +281,11 @@ export function HomeScreen({
     <>
       <main
         className="mx-auto min-h-dvh w-full max-w-[420px] bg-crema px-[18px] pt-2 font-sans text-tinta"
-        style={{ paddingBottom: "max(30px, env(safe-area-inset-bottom))", opacity: isPending ? 0.6 : 1, transition: "opacity 0.2s" }}
+        style={{
+          paddingBottom: "max(30px, env(safe-area-inset-bottom))",
+          opacity: isPending ? 0.6 : 1,
+          transition: "opacity 0.2s",
+        }}
         inert={!!modal || isPending}
       >
         {/* Saludo + fecha */}
@@ -269,6 +314,79 @@ export function HomeScreen({
           </p>
         </header>
 
+        {/* Banners de solicitudes de intercambio pendientes */}
+        {intercambiosPendientes.length > 0 && (
+          <section aria-label="Peticiones de intercambio" className="mb-4 space-y-2.5">
+            {intercambiosPendientes.map((sol) =>
+              sol.esRecibida ? (
+                <div
+                  key={sol.id}
+                  className="rounded-[22px] border-2 border-[#e2733f] bg-[#fff4ec] p-4 shadow-sm"
+                >
+                  <div className="flex items-start gap-2.5">
+                    <span className="flex size-9 flex-shrink-0 items-center justify-center rounded-xl bg-[#fbd9c4] text-[18px]">
+                      🔄
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-display text-[14.5px] font-extrabold text-tinta leading-snug">
+                        {sol.solicitanteNombre} te pide intercambiar hoy
+                      </p>
+                      <p className="mt-1 text-[12.5px] font-medium text-[#6e5d4f] leading-snug">
+                        Tú harías{" "}
+                        <strong>
+                          {sol.deberSolicitanteIcono} {sol.deberSolicitanteNombre}
+                        </strong>{" "}
+                        y {sol.solicitanteNombre} haría{" "}
+                        <strong>
+                          {sol.deberDestinatarioIcono} {sol.deberDestinatarioNombre}
+                        </strong>{" "}
+                        (ambos por sus +10 pts normales).
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleResponderIntercambio(sol.id, true)}
+                      disabled={isPending}
+                      className="flex-1 rounded-xl bg-terracota py-2 text-[12.5px] font-extrabold text-white shadow-sm transition-transform active:scale-95 disabled:opacity-50"
+                    >
+                      ✓ Aceptar cambio
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleResponderIntercambio(sol.id, false)}
+                      disabled={isPending}
+                      className="rounded-xl border border-[#dccdb4] bg-white px-3.5 py-2 text-[12.5px] font-bold text-[#7c6b58] transition-transform active:scale-95 disabled:opacity-50"
+                    >
+                      ✕ Rechazar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  key={sol.id}
+                  className="flex items-center justify-between gap-2 rounded-[18px] border border-[#e6d9c4] bg-[#faf5eb] px-3.5 py-2.5"
+                >
+                  <p className="text-[12px] font-semibold text-[#7c6b58]">
+                    ⏳ Esperando a <strong>{sol.destinatarioNombre}</strong> para
+                    cambiar por {sol.deberDestinatarioIcono}{" "}
+                    {sol.deberDestinatarioNombre}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleCancelarIntercambio(sol.id)}
+                    disabled={isPending}
+                    className="flex-shrink-0 rounded-lg border border-[#dccdb4] bg-white px-2.5 py-1 text-[11px] font-bold text-[#9a8c7c] hover:text-terracota"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              ),
+            )}
+          </section>
+        )}
+
         {/* Deberes del día — una tarjeta por cada deber con su propio botón */}
         {deberesHoy.length === 0 ? (
           <section className="rounded-[26px] border border-[#f0e6d5] bg-crema-card p-6 text-center">
@@ -285,7 +403,9 @@ export function HomeScreen({
               cumplido={deber.cumplido}
               isSubmitting={isPending}
               onMarcar={() => marcarCumplido(idx)}
-              onDeshacer={() => deshacerCumplido(idx)}
+              onMarcarCriterio={(criterioId) =>
+                marcarCriterioPropio(idx, criterioId)
+              }
               className={idx > 0 ? "mt-3.5" : ""}
             />
           ))
@@ -330,81 +450,113 @@ export function HomeScreen({
           </div>
           <ul className="mt-[13px] flex items-stretch gap-[9px]">
             {hermanos.map((h, i) => {
-              // Para el "yo", el cumplido depende de si marcó todos sus deberes
               const cumplidoVisible = h.esYo
                 ? todosMisDeberesCumplidos
                 : h.cumplido;
               const cobertura = h.cobertura;
-              const puedeCubrir =
-                !h.esYo && !h.cumplido && cobertura === undefined;
+              const totCrit = h.criteriosTotales ?? 0;
+              const compCrit = h.criteriosCompletados ?? 0;
+              const tieneCriteriosPendientes =
+                totCrit > 0 ? compCrit < totCrit : !h.cumplido;
+              const puedeCubrir = !h.esYo && tieneCriteriosPendientes;
+
+              const yaHaySolicitudConEl = intercambiosPendientes.some(
+                (s) =>
+                  s.solicitanteId === h.participanteId ||
+                  s.destinatarioId === h.participanteId,
+              );
 
               return (
                 <li
                   key={h.nombre}
-                  className="relative flex-1 rounded-[18px] px-[9px] pb-3 pt-[13px] text-center"
+                  className="relative flex flex-1 flex-col justify-between rounded-[18px] px-[9px] pb-3 pt-[13px] text-center"
                   style={parseStyle(h.cardStyle)}
                 >
-                  <div className="relative">
-                    <div
-                      className="mx-auto flex size-[46px] items-center justify-center rounded-full bg-white text-[23px] font-bold text-naranja shadow-sm"
-                      style={parseStyle(h.ringStyle)}
-                    >
-                      {h.fotoUrl ? (
-                        <img
-                          src={h.fotoUrl}
-                          alt={h.nombre}
-                          className="size-full rounded-full object-cover"
-                        />
-                      ) : (
-                        h.nombre.charAt(0).toUpperCase()
+                  <div>
+                    <div className="relative">
+                      <div
+                        className="mx-auto flex size-[46px] items-center justify-center rounded-full bg-white text-[23px] font-bold text-naranja shadow-sm"
+                        style={parseStyle(h.ringStyle)}
+                      >
+                        {h.fotoUrl ? (
+                          <img
+                            src={h.fotoUrl}
+                            alt={h.nombre}
+                            className="size-full rounded-full object-cover"
+                          />
+                        ) : (
+                          h.nombre.charAt(0).toUpperCase()
+                        )}
+                      </div>
+                      {h.esYo && (
+                        <span className="absolute right-[9px] top-[9px] rounded-[20px] bg-terracota px-1.5 py-0.5 text-[9px] font-extrabold tracking-[0.06em] text-white">
+                          TÚ
+                        </span>
                       )}
                     </div>
-                    {h.esYo && (
-                      <span className="absolute right-[9px] top-[9px] rounded-[20px] bg-terracota px-1.5 py-0.5 text-[9px] font-extrabold tracking-[0.06em] text-white">
-                        TÚ
-                      </span>
+                    <p className="mt-2 text-[13px] font-extrabold">{h.nombre}</p>
+                    <p className="mt-px text-[10.5px] font-semibold text-[#a6927c]">
+                      {h.rol}
+                    </p>
+
+                    {cumplidoVisible ? (
+                      <p className="mt-[9px] inline-flex items-center gap-1 rounded-[20px] bg-[#e3efdf] px-[9px] py-1 text-[10.5px] font-extrabold text-[#477a4e]">
+                        ● Cumplido
+                      </p>
+                    ) : compCrit > 0 && totCrit > 0 ? (
+                      <p className="mt-[9px] inline-flex items-center gap-1 rounded-[20px] bg-[#fbefd6] px-[9px] py-1 text-[10.5px] font-extrabold text-[#9a7a2e]">
+                        ● {compCrit}/{totCrit} listo
+                      </p>
+                    ) : cobertura === undefined ? (
+                      <p className="mt-[9px] inline-flex items-center gap-1 rounded-[20px] bg-[#efe7da] px-[9px] py-1 text-[10.5px] font-extrabold text-[#a0917e]">
+                        ● Pendiente
+                      </p>
+                    ) : null}
+
+                    {cobertura === "bonus" && (
+                      <p className="mt-[7px] rounded-[11px] bg-[#e3efdf] px-[5px] py-1 text-[10px] font-bold leading-[1.25] text-[#477a4e]">
+                        Cubriste · +{h.coberturaPuntosGanados ?? 15} pts
+                      </p>
+                    )}
+                    {cobertura === "nobonus" && (
+                      <p className="mt-[7px] rounded-[11px] bg-[#fbefd6] px-[5px] py-1 text-[10px] font-bold leading-[1.25] text-[#9a7a2e]">
+                        Cubriste (+{h.coberturaPuntosGanados ?? 15})
+                        <br />
+                        cumple el tuyo p/ bono
+                      </p>
+                    )}
+                    {cobertura === "cubierto_por_otro" && (
+                      <p className="mt-[7px] rounded-[11px] bg-[#e3efdf] px-[5px] py-1.5 text-[10px] font-bold leading-[1.25] text-[#477a4e]">
+                        ¡Te cubrieron!
+                      </p>
                     )}
                   </div>
-                  <p className="mt-2 text-[13px] font-extrabold">{h.nombre}</p>
-                  <p className="mt-px text-[10.5px] font-semibold text-[#a6927c]">
-                    {h.rol}
-                  </p>
 
-                  {cumplidoVisible ? (
-                    <p className="mt-[9px] inline-flex items-center gap-1 rounded-[20px] bg-[#e3efdf] px-[9px] py-1 text-[10.5px] font-extrabold text-[#477a4e]">
-                      ● Cumplido
-                    </p>
-                  ) : cobertura === undefined ? (
-                    <p className="mt-[9px] inline-flex items-center gap-1 rounded-[20px] bg-[#efe7da] px-[9px] py-1 text-[10.5px] font-extrabold text-[#a0917e]">
-                      ● Pendiente
-                    </p>
-                  ) : null}
-
-                  {puedeCubrir && (
-                    <button
-                      type="button"
-                      onClick={() => abrirModalCubrir(i)}
-                      className="mt-[9px] w-full rounded-[11px] border-[1.5px] border-[#e6b79c] bg-[#fff4ec] px-1 py-[7px] text-[11px] font-extrabold text-[#c25a2e] transition-colors hover:bg-[#ffe9db] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-terracota"
-                    >
-                      Cubrir su deber
-                    </button>
-                  )}
-                  {cobertura === "bonus" && (
-                    <p className="mt-[9px] rounded-[11px] bg-[#e3efdf] px-[5px] py-1.5 text-[10px] font-bold leading-[1.25] text-[#477a4e]">
-                      Cubierto · +15 pts
-                    </p>
-                  )}
-                  {cobertura === "nobonus" && (
-                    <p className="mt-[9px] rounded-[11px] bg-[#fbefd6] px-[5px] py-1.5 text-[10px] font-bold leading-[1.25] text-[#9a7a2e]">
-                      Cubierto · cumple
-                      <br />
-                      el tuyo p/ el bono
-                    </p>
-                  )}
-                  {cobertura === "cubierto_por_otro" && (
-                    <p className="mt-[9px] rounded-[11px] bg-[#e3efdf] px-[5px] py-1.5 text-[10px] font-bold leading-[1.25] text-[#477a4e]">
-                      ¡Te cubrieron!
-                    </p>
+                  {/* Acciones hacia el hermano: Cubrir criterios y/o Intercambiar */}
+                  {!h.esYo && (puedeCubrir || (h.puedeIntercambiar && !yaHaySolicitudConEl)) && (
+                    <div className="mt-[9px] flex flex-col gap-1.5">
+                      {puedeCubrir && (
+                        <button
+                          type="button"
+                          onClick={() => abrirModalCubrir(i)}
+                          className="w-full rounded-[11px] border-[1.5px] border-[#e6b79c] bg-[#fff4ec] px-1 py-[6px] text-[10.5px] font-extrabold text-[#c25a2e] transition-colors hover:bg-[#ffe9db] active:scale-[0.97]"
+                        >
+                          {cobertura ? "+ Cubrir otro" : "Cubrir deber"}
+                        </button>
+                      )}
+                      {h.puedeIntercambiar && !yaHaySolicitudConEl && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handlePedirIntercambio(h.participanteId, h.nombre)
+                          }
+                          disabled={isPending}
+                          className="w-full rounded-[11px] border border-[#dccdb4] bg-[#faf5eb] px-1 py-[5px] text-[10px] font-bold text-[#7c6b58] transition-colors hover:bg-[#f0e6d5] active:scale-[0.97] disabled:opacity-50"
+                        >
+                          🔄 Intercambiar
+                        </button>
+                      )}
+                    </div>
                   )}
                 </li>
               );
@@ -412,7 +564,7 @@ export function HomeScreen({
           </ul>
         </section>
 
-        {/* Extras de la semana (Plano, sin acordeón) */}
+        {/* Extras de la semana */}
         <section aria-label="Extras de la semana" className="mt-8">
           <div className="flex items-baseline justify-between px-0.5 mb-3">
             <h2 className="font-display text-[18px] font-extrabold tracking-[-0.02em]">
@@ -450,7 +602,7 @@ export function HomeScreen({
                           {e.meta}
                         </span>
                       </span>
-                      
+
                       {estado === "done" ? (
                         <span className="flex-shrink-0 rounded-xl bg-[#e3efdf] px-3 py-2 text-[12px] font-extrabold text-[#477a4e]">
                           ✓ Reclamado
@@ -516,12 +668,13 @@ export function HomeScreen({
           nombre={modal.nombre}
           emoji={modal.emoji}
           puntos={modal.puntos}
+          bonoAyuda={modal.bonoAyuda}
           criterios={modal.criterios}
+          criteriosDetalle={modal.criteriosDetalle}
           requiereFoto={modal.requiereFoto}
           isSubmitting={isPending}
           onClose={() => setModal(null)}
-          onConfirmar={(fotoUrl, nota) => {
-            // El setModal es async para React, así que usamos un timeout para esperar el render
+          onConfirmar={(fotoUrl, nota, criteriosSeleccionados) => {
             startTransition(async () => {
               if (modal.tipo === "cubrir" && modal.hermanoIdx !== undefined) {
                 const h = hermanos[modal.hermanoIdx];
@@ -531,36 +684,44 @@ export function HomeScreen({
                 fd.append("cubiertoA", h.participanteId);
                 if (fotoUrl) fd.append("fotoUrl", fotoUrl);
                 if (nota) fd.append("nota", nota);
-                
+                if (criteriosSeleccionados && criteriosSeleccionados.length > 0) {
+                  for (const cId of criteriosSeleccionados) {
+                    fd.append("criteriosIds", cId);
+                  }
+                }
+
                 const res = await cubrirDeberAction(fd);
                 if (!res.ok) {
                   toast.error("Error: " + res.error);
                   return;
                 }
+                toast.success("¡Cobertura registrada!");
               } else if (modal.tipo === "reclamar" && modal.extraClave) {
                 const fd = new FormData();
                 fd.append("deberId", modal.extraClave);
                 fd.append("participanteId", miId);
                 if (fotoUrl) fd.append("fotoUrl", fotoUrl);
                 if (nota) fd.append("nota", nota);
-                
+
                 const res = await reclamarExtraAction(fd);
                 if (!res.ok) {
                   toast.error("Error: " + res.error);
                   return;
                 }
+                toast.success("¡Extra reclamado!");
               } else if (modal.tipo === "personal" && modal.extraClave) {
                 const fd = new FormData();
                 fd.append("deberId", modal.extraClave);
                 fd.append("participanteId", miId);
                 if (fotoUrl) fd.append("fotoUrl", fotoUrl);
                 if (nota) fd.append("nota", nota);
-                
+
                 const res = await marcarCumplidoAction(fd);
                 if (!res.ok) {
                   toast.error("Error: " + res.error);
                   return;
                 }
+                toast.success("¡Deber personal marcado!");
               }
               await notificarCambioHogar("modal_confirmado");
               router.refresh();
@@ -573,7 +734,7 @@ export function HomeScreen({
   );
 }
 
-// ── Tarjeta del deber propio (con botón de marcar dentro) ───────────────────
+// ── Tarjeta del deber propio (con criterios interactivos y botón de marcar) ──
 
 function DeberPropioCard({
   variant = "plain",
@@ -581,7 +742,7 @@ function DeberPropioCard({
   cumplido,
   isSubmitting,
   onMarcar,
-  onDeshacer,
+  onMarcarCriterio,
   className = "",
 }: {
   variant?: HeroVariant;
@@ -589,9 +750,15 @@ function DeberPropioCard({
   cumplido: boolean;
   isSubmitting?: boolean;
   onMarcar: () => void;
-  onDeshacer: () => void;
+  onMarcarCriterio: (criterioId: string) => void;
   className?: string;
 }) {
+  const detalle = deber.criteriosDetalle ?? [];
+  const totalCrit = detalle.length;
+  const completadosCrit = detalle.filter((c) => c.completado).length;
+  const faltantesCrit = totalCrit - completadosCrit;
+  const ptsHoy = deber.puntosGanadosHoy ?? (cumplido ? deber.puntos : 0);
+
   return (
     <section
       aria-label={`Tu deber: ${deber.nombre}`}
@@ -599,7 +766,31 @@ function DeberPropioCard({
       style={{ boxShadow: "0 22px 46px -24px rgba(90,62,30,.5)" }}
     >
       {deber.cubiertoPor ? (
-        /* Estado cubierto por otro: hero + botón confirmar */
+        /* Cubierto al 100% por un hermano */
+        <div
+          role="status"
+          aria-live="polite"
+          className="relative overflow-hidden p-[28px_24px_20px] text-center"
+          style={{
+            background: "linear-gradient(158deg,#E8F1E2 0%,#D6E9CE 100%)",
+          }}
+        >
+          <span
+            aria-hidden="true"
+            className="animate-pop-lg mx-auto flex size-[60px] items-center justify-center rounded-full bg-verde text-[30px] text-white"
+            style={{ boxShadow: "0 14px 30px -10px rgba(92,154,106,.8)" }}
+          >
+            ✓
+          </span>
+          <p className="mt-3 font-display text-[22px] font-extrabold tracking-[-0.02em] text-[#33502f]">
+            ¡Te cubrieron!
+          </p>
+          <p className="mt-1 text-[13px] font-semibold text-[#5e7a56]">
+            <strong>{deber.cubiertoPor.nombre}</strong> hizo &ldquo;{deber.nombre}&rdquo; por ti.
+          </p>
+        </div>
+      ) : cumplido ? (
+        /* Estado 100% cumplido */
         <>
           <div
             role="status"
@@ -607,33 +798,6 @@ function DeberPropioCard({
             className="relative overflow-hidden p-[28px_24px_20px] text-center"
             style={{
               background: "linear-gradient(158deg,#E8F1E2 0%,#D6E9CE 100%)",
-            }}
-          >
-            <span
-              aria-hidden="true"
-              className="animate-pop-lg mx-auto flex size-[60px] items-center justify-center rounded-full bg-verde text-[30px] text-white"
-              style={{ boxShadow: "0 14px 30px -10px rgba(92,154,106,.8)" }}
-            >
-              ✓
-            </span>
-            <p className="mt-3 font-display text-[22px] font-extrabold tracking-[-0.02em] text-[#33502f]">
-              ¡Te cubrieron!
-            </p>
-            <p className="mt-1 text-[13px] font-semibold text-[#5e7a56]">
-              <strong>{deber.cubiertoPor.nombre}</strong> hizo "{deber.nombre}" por ti.
-            </p>
-          </div>
-        </>
-      ) : cumplido ? (
-        /* Estado cumplido: reemplaza al hero con celebración + botón deshacer */
-        <>
-          <div
-            role="status"
-            aria-live="polite"
-            className="relative overflow-hidden p-[28px_24px_20px] text-center"
-            style={{
-              background:
-                "linear-gradient(158deg,#E8F1E2 0%,#D6E9CE 100%)",
             }}
           >
             <span
@@ -650,7 +814,7 @@ function DeberPropioCard({
             </p>
             <p className="mt-1 text-[13px] font-semibold text-[#5e7a56]">
               {deber.nombre} listo.{" "}
-              <strong>+{deber.puntos} pts</strong> a tu mes.
+              <strong>+{ptsHoy} pts</strong> a tu mes.
             </p>
             <span
               aria-hidden="true"
@@ -659,14 +823,31 @@ function DeberPropioCard({
               {deber.icono}
             </span>
           </div>
+          {detalle.some((c) => !c.esPropio) && (
+            <div className="px-5 pt-3">
+              <ul className="space-y-1.5">
+                {detalle.map((c) => (
+                  <li
+                    key={c.id}
+                    className="flex items-center justify-between text-[12px] font-semibold text-[#477a4e]"
+                  >
+                    <span className="truncate pr-2">✓ {c.descripcion}</span>
+                    <span className="flex-shrink-0 rounded-full bg-[#e3efdf] px-2 py-0.5 text-[10px] font-extrabold">
+                      {c.esPropio ? "Tú" : `Cubrió ${c.completadoPorNombre}`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="px-5 py-3">
             <div className="flex w-full items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-[#d6e9ce] bg-[#f0fdf4] p-[12px] text-[13.5px] font-bold text-[#166534]">
-              ✓ Cumplido hoy
+              ✓ Cumplido hoy ({totalCrit > 0 ? `${totalCrit}/${totalCrit}` : "100%"})
             </div>
           </div>
         </>
       ) : (
-        /* Estado pendiente: hero + criterios de referencia + botón marcar */
+        /* Estado pendiente o en progreso por criterios */
         <>
           {variant === "photo" ? (
             <HeroFoto deber={deber} />
@@ -674,31 +855,92 @@ function DeberPropioCard({
             <HeroColor deber={deber} />
           )}
 
-          {/* Criterios de aceptación — solo como referencia (no checkable) */}
+          {/* Lista de criterios de aceptación interactivos */}
           <div className="px-5 pb-2 pt-4">
-            <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#b19a80]">
-              Criterios de aceptación
-            </p>
-            <ul className="mt-1.5">
-              {deber.criterios.map((label) => (
-                <li
-                  key={label}
-                  className="flex items-start gap-3 border-t border-[#f4ecdd] py-2.5"
-                >
-                  <span
-                    aria-hidden="true"
-                    className="mt-[7px] size-[6px] flex-shrink-0 rounded-full bg-[#d4c5ad]"
-                  />
-                  <span className="text-[14px] font-medium leading-[1.35] text-[#4a4039]">
-                    {label}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#b19a80]">
+                Criterios de aceptación{" "}
+                {totalCrit > 0 ? `(${completadosCrit}/${totalCrit})` : ""}
+              </p>
+              {ptsHoy > 0 && (
+                <span className="rounded-full bg-[#e3efdf] px-2 py-0.5 text-[10.5px] font-extrabold text-[#477a4e]">
+                  +{ptsHoy} pts ganados
+                </span>
+              )}
+            </div>
+
+            {detalle.length > 0 ? (
+              <ul className="mt-2 space-y-1.5">
+                {detalle.map((c) => {
+                  const ptsPorCriterio =
+                    Math.round((deber.puntos / totalCrit) * 100) / 100;
+                  return (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        disabled={c.completado || isSubmitting}
+                        onClick={() => onMarcarCriterio(c.id)}
+                        className={`flex w-full items-start gap-3 rounded-xl border p-2.5 text-left transition-all ${
+                          c.completado
+                            ? "border-[#d6e9ce] bg-[#f4fbf1] cursor-default"
+                            : "border-[#efe4d2] bg-[#faf5eb]/70 hover:border-[#e2733f] hover:bg-[#fff4ec] active:scale-[0.99]"
+                        }`}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`mt-0.5 flex size-[20px] flex-shrink-0 items-center justify-center rounded-md text-[12px] font-bold transition-colors ${
+                            c.completado
+                              ? "bg-[#477a4e] text-white"
+                              : "border-2 border-[#cbb89d] bg-white text-transparent"
+                          }`}
+                        >
+                          ✓
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <span
+                            className={`block text-[13.5px] font-semibold leading-[1.3] ${
+                              c.completado
+                                ? "line-through text-[#6c8a68]"
+                                : "text-[#4a4039]"
+                            }`}
+                          >
+                            {c.descripcion}
+                          </span>
+                          <span className="mt-0.5 block text-[10.5px] font-bold text-[#a88c5a]">
+                            {c.completado
+                              ? c.esPropio
+                                ? "✓ Hecho por ti"
+                                : `✓ Cubierto por ${c.completadoPorNombre}`
+                              : `Toca para marcar (+${ptsPorCriterio} pts)`}
+                          </span>
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <ul className="mt-1.5">
+                {deber.criterios.map((label) => (
+                  <li
+                    key={label}
+                    className="flex items-start gap-3 border-t border-[#f4ecdd] py-2.5"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="mt-[7px] size-[6px] flex-shrink-0 rounded-full bg-[#d4c5ad]"
+                    />
+                    <span className="text-[14px] font-medium leading-[1.35] text-[#4a4039]">
+                      {label}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
-          {/* Botón DENTRO de la tarjeta — cada deber tiene el suyo */}
-          <div className="px-5 pb-5">
+          {/* Botón principal DENTRO de la tarjeta */}
+          <div className="px-5 pb-5 pt-2">
             <button
               type="button"
               onClick={onMarcar}
@@ -711,7 +953,9 @@ function DeberPropioCard({
             >
               {isSubmitting ? (
                 <>
-                  <span aria-hidden="true" className="animate-spin text-[16px]">⏳</span>
+                  <span aria-hidden="true" className="animate-spin text-[16px]">
+                    ⏳
+                  </span>
                   Procesando...
                 </>
               ) : (
@@ -722,7 +966,9 @@ function DeberPropioCard({
                   >
                     ✓
                   </span>
-                  Marcar como cumplido
+                  {completadosCrit > 0 && faltantesCrit > 0
+                    ? `Completar restantes (${faltantesCrit}/${totalCrit})`
+                    : "Marcar todo como cumplido"}
                 </>
               )}
             </button>
@@ -735,7 +981,6 @@ function DeberPropioCard({
 
 // ── Sub-componentes del HERO ────────────────────────────────────────────────
 
-/** Variante A: color + tipografía (sin foto). La preferida del usuario. */
 function HeroColor({ deber }: { deber: DeberHoy }) {
   return (
     <div
@@ -761,7 +1006,7 @@ function HeroColor({ deber }: { deber: DeberHoy }) {
             {deber.nombre}
           </p>
           <p className="mt-[5px] text-[13px] font-bold text-[#86631f]">
-            {deber.puntos} pts · se marca por confianza
+            {deber.puntos} pts · marca por criterio o todo junto
           </p>
         </div>
       </div>
@@ -775,7 +1020,6 @@ function HeroColor({ deber }: { deber: DeberHoy }) {
   );
 }
 
-/** Variante B: foto motivacional de fondo (placeholder etiquetado). */
 function HeroFoto({ deber }: { deber: DeberHoy }) {
   return (
     <div
@@ -785,7 +1029,6 @@ function HeroFoto({ deber }: { deber: DeberHoy }) {
           "repeating-linear-gradient(135deg,#EADDC6,#EADDC6 11px,#E2D2B6 11px,#E2D2B6 22px)",
       }}
     >
-      {/* Placeholder de la foto */}
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
         <span aria-hidden="true" className="text-[40px] opacity-50">
           {deber.icono}
@@ -796,7 +1039,6 @@ function HeroFoto({ deber }: { deber: DeberHoy }) {
           </span>
         </div>
       </div>
-      {/* Degradado oscuro para legibilidad del título */}
       <div
         className="absolute inset-x-0 bottom-0 h-[70%]"
         style={{
@@ -830,17 +1072,16 @@ function HeroFoto({ deber }: { deber: DeberHoy }) {
   );
 }
 
-// ── Modal (bottom sheet) para detalle de deber ──────────────────────────────
+// ── Modal para cubrir un deber (por criterios) o reclamar un extra ──────────
 
-/**
- * Bottom sheet que muestra los detalles de un deber al cubrir o reclamar.
- */
 function DetalleDeberModal({
   tipo,
   nombre,
   emoji,
   puntos,
+  bonoAyuda = 5,
   criterios,
+  criteriosDetalle = [],
   requiereFoto = false,
   isSubmitting = false,
   onClose,
@@ -850,16 +1091,35 @@ function DetalleDeberModal({
   nombre: string;
   emoji: string;
   puntos: number;
+  bonoAyuda?: number;
   criterios: string[];
+  criteriosDetalle?: CriterioEstado[];
   requiereFoto?: boolean;
   isSubmitting?: boolean;
   onClose: () => void;
-  onConfirmar: (fotoUrl?: string, nota?: string) => void;
+  onConfirmar: (
+    fotoUrl?: string,
+    nota?: string,
+    criteriosSeleccionados?: string[],
+  ) => void;
 }) {
   const [fotoUrl, setFotoUrl] = useState<string | null>(null);
   const [nota, setNota] = useState("");
   const [isUploading, setIsUploading] = useState(false);
-  
+
+  // Para modo "cubrir": criterios disponibles que el usuario marca para cubrir
+  const disponiblesIds = criteriosDetalle
+    .filter((c) => !c.completado)
+    .map((c) => c.id);
+
+  const [seleccionados, setSeleccionados] = useState<string[]>(disponiblesIds);
+
+  const toggleCriterio = (id: string) => {
+    setSeleccionados((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
   const dialogRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -869,18 +1129,17 @@ function DetalleDeberModal({
 
     setIsUploading(true);
     try {
-      // Optimización automática a WebP ultraligero
       const { archivo: archivoOptimizado } = await comprimirImagen(file, {
         maxDimension: 1280,
         calidad: 0.78,
       });
 
-      const fileExt = archivoOptimizado.name.split('.').pop() || "webp";
+      const fileExt = archivoOptimizado.name.split(".").pop() || "webp";
       const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
       const filePath = `${fileName}`;
 
       const { error: uploadError } = await supabase.storage
-        .from('evidencias')
+        .from("evidencias")
         .upload(filePath, archivoOptimizado, {
           contentType: archivoOptimizado.type,
           upsert: false,
@@ -890,7 +1149,9 @@ function DetalleDeberModal({
         throw uploadError;
       }
 
-      const { data } = supabase.storage.from('evidencias').getPublicUrl(filePath);
+      const { data } = supabase.storage
+        .from("evidencias")
+        .getPublicUrl(filePath);
       setFotoUrl(data.publicUrl);
     } catch (error: any) {
       toast.error("Error subiendo foto: " + error.message);
@@ -899,7 +1160,6 @@ function DetalleDeberModal({
     }
   };
 
-  // Cerrar con Escape.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -908,7 +1168,6 @@ function DetalleDeberModal({
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  // Bloquear scroll del body mientras el modal está abierto.
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -917,22 +1176,49 @@ function DetalleDeberModal({
     };
   }, []);
 
-  // Foco inicial en el diálogo.
   useEffect(() => {
     dialogRef.current?.focus();
   }, []);
 
+  // Cálculo proporcional de puntos al cubrir
+  const totalCriterios = criteriosDetalle.length;
+  const totalPuntosCobertura = puntos + bonoAyuda; // ej. 10 + 5 = 15
+  const puntosCalculadosCubrir =
+    totalCriterios > 0
+      ? Math.round(
+          ((totalPuntosCobertura * seleccionados.length) / totalCriterios) *
+            100,
+        ) / 100
+      : totalPuntosCobertura;
+
   let puedeConfirmar = false;
-  if ((tipo === "reclamar" || tipo === "personal") && requiereFoto) puedeConfirmar = !!fotoUrl;
-  if ((tipo === "reclamar" || tipo === "personal") && !requiereFoto) puedeConfirmar = true;
-  if (tipo === "cubrir") puedeConfirmar = nota.trim().length > 0;
+  if ((tipo === "reclamar" || tipo === "personal") && requiereFoto)
+    puedeConfirmar = !!fotoUrl;
+  if ((tipo === "reclamar" || tipo === "personal") && !requiereFoto)
+    puedeConfirmar = true;
+  if (tipo === "cubrir") {
+    const tieneCriteriosValidos =
+      totalCriterios === 0 || seleccionados.length > 0;
+    puedeConfirmar = nota.trim().length > 0 && tieneCriteriosValidos;
+  }
 
   let labelBoton = "Confirmar";
-  if (tipo === "cubrir") labelBoton = "Confirmar cobertura";
-  if (tipo === "reclamar" || tipo === "personal") labelBoton = "Marcar como cumplido";
-  
+  if (tipo === "cubrir") {
+    labelBoton =
+       puntosCalculadosCubrir > 0
+        ? `Confirmar cobertura (+${puntosCalculadosCubrir} pts)`
+        : "Selecciona al menos 1 criterio";
+  }
+  if (tipo === "reclamar" || tipo === "personal")
+    labelBoton = "Marcar como cumplido";
+
   let subtitulo = "";
-  if (tipo === "cubrir") subtitulo = `Obligatorio · +${puntos} pts por cubrir`;
+  if (tipo === "cubrir") {
+    subtitulo =
+      totalCriterios > 0
+        ? `${seleccionados.length} de ${totalCriterios} criterios · +${puntosCalculadosCubrir} pts por cubrir`
+        : `Obligatorio · +${totalPuntosCobertura} pts por cubrir`;
+  }
   if (tipo === "reclamar") subtitulo = `Reclamable · +${puntos} pts`;
   if (tipo === "personal") subtitulo = `Personal · Extra · +${puntos} pts`;
 
@@ -943,23 +1229,19 @@ function DetalleDeberModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      {/* Fondo oscuro con blur */}
       <div className="animate-fade-in absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
 
-      {/* Modal centrado */}
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={`Detalle: ${nombre}`}
         tabIndex={-1}
-        className="animate-pop-lg relative z-10 w-full max-w-[420px] rounded-[26px] bg-crema-card outline-none"
+        className="animate-pop-lg relative z-10 max-h-[90dvh] w-full max-w-[420px] overflow-y-auto rounded-[26px] bg-crema-card outline-none"
         style={{
           boxShadow: "0 10px 40px -10px rgba(60,40,15,.25)",
         }}
       >
-
-        {/* Botón cerrar */}
         <button
           type="button"
           onClick={onClose}
@@ -989,47 +1271,117 @@ function DetalleDeberModal({
               <p className="font-display text-[22px] font-extrabold leading-[1.05] tracking-[-0.02em]">
                 {nombre}
               </p>
-              <p className="mt-0.5 text-[12.5px] font-semibold text-[#9a8c7c]">
+              <p className="mt-0.5 text-[12.5px] font-semibold text-[#c25a2e]">
                 {subtitulo}
               </p>
             </div>
           </div>
 
           {/* Criterios de aceptación */}
-          {criterios.length > 0 && (
+          {tipo === "cubrir" && criteriosDetalle.length > 0 ? (
             <div className="mt-5">
               <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#b19a80]">
-                Criterios de aceptación
+                ¿Qué criterios le cubriste?
               </p>
-              <ul className="mt-1.5">
-                {criterios.map((c) => (
-                  <li
-                    key={c}
-                    className="flex items-start gap-3 border-t border-[#f4ecdd] py-2.5"
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="mt-[7px] size-[6px] flex-shrink-0 rounded-full bg-[#d4c5ad]"
-                    />
-                    <span className="text-[14px] font-medium leading-[1.35] text-[#4a4039]">
-                      {c}
-                    </span>
-                  </li>
-                ))}
+              <ul className="mt-2 space-y-2">
+                {criteriosDetalle.map((c) => {
+                  const estaMarcado = seleccionados.includes(c.id);
+                  const ptsUnitario =
+                    Math.round(
+                      (totalPuntosCobertura / totalCriterios) * 100,
+                    ) / 100;
+
+                  if (c.completado) {
+                    return (
+                      <li
+                        key={c.id}
+                        className="flex items-start gap-3 rounded-xl border border-[#e3efdf] bg-[#f4fbf1] p-2.5 opacity-75"
+                      >
+                        <span className="mt-0.5 flex size-[20px] flex-shrink-0 items-center justify-center rounded-md bg-[#477a4e] text-[12px] font-bold text-white">
+                          ✓
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <span className="block text-[13.5px] font-semibold line-through text-[#6c8a68]">
+                            {c.descripcion}
+                          </span>
+                          <span className="block text-[10.5px] font-bold text-[#477a4e]">
+                            Ya realizado por {c.completadoPorNombre}
+                          </span>
+                        </div>
+                      </li>
+                    );
+                  }
+
+                  return (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        onClick={() => toggleCriterio(c.id)}
+                        className={`flex w-full items-start gap-3 rounded-xl border p-2.5 text-left transition-all ${
+                          estaMarcado
+                            ? "border-[#e2733f] bg-[#fff4ec]"
+                            : "border-[#dccdb4] bg-[#faf5eb] opacity-75"
+                        }`}
+                      >
+                        <span
+                          className={`mt-0.5 flex size-[20px] flex-shrink-0 items-center justify-center rounded-md text-[12px] font-bold transition-colors ${
+                            estaMarcado
+                              ? "bg-terracota text-white"
+                              : "border-2 border-[#cbb89d] bg-white text-transparent"
+                          }`}
+                        >
+                          ✓
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <span className="block text-[13.5px] font-semibold leading-[1.3] text-[#4a4039]">
+                            {c.descripcion}
+                          </span>
+                          <span className="mt-0.5 block text-[11px] font-bold text-[#c25a2e]">
+                            +{ptsUnitario} pts al cubrir este criterio
+                          </span>
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
+          ) : (
+            criterios.length > 0 && (
+              <div className="mt-5">
+                <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#b19a80]">
+                  Criterios de aceptación
+                </p>
+                <ul className="mt-1.5">
+                  {criterios.map((c) => (
+                    <li
+                      key={c}
+                      className="flex items-start gap-3 border-t border-[#f4ecdd] py-2.5"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="mt-[7px] size-[6px] flex-shrink-0 rounded-full bg-[#d4c5ad]"
+                      />
+                      <span className="text-[14px] font-medium leading-[1.35] text-[#4a4039]">
+                        {c}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
           )}
 
-          {/* Subir foto (solo para extras/reclamables) */}
+          {/* Subir foto (solo para extras/reclamables que la pidan) */}
           {requiereFoto && (
             <div className="mt-5">
-              <input 
-                type="file" 
-                accept="image/*" 
-                capture="environment" 
-                className="hidden" 
-                ref={fileInputRef} 
-                onChange={handleFileChange} 
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                ref={fileInputRef}
+                onChange={handleFileChange}
               />
               {!fotoUrl ? (
                 <button
@@ -1046,7 +1398,9 @@ function DetalleDeberModal({
               ) : (
                 <div className="animate-pop flex flex-col items-center gap-3">
                   <div className="flex w-full items-center gap-2 rounded-[14px] bg-[#e3efdf] p-[12px_14px] text-[13px] font-bold text-[#477a4e]">
-                    <span aria-hidden="true" className="text-[16px]">✅</span>
+                    <span aria-hidden="true" className="text-[16px]">
+                      ✅
+                    </span>
                     Foto subida correctamente
                   </div>
                   <button
@@ -1068,12 +1422,12 @@ function DetalleDeberModal({
                 ? "Justificación (Obligatoria)"
                 : "Nota o detalle adicional (Opcional)"}
             </p>
-            <textarea 
+            <textarea
               value={nota}
               onChange={(e) => setNota(e.target.value)}
               placeholder={
                 tipo === "cubrir"
-                  ? "Ej. Le estoy haciendo el favor porque está ocupado..."
+                  ? "Ej. Adelanté la comida del mediodía mientras estaba ocupado..."
                   : "Ej. Lavé sábanas y toallas, o dejé todo recogido..."
               }
               className="mt-2 w-full resize-none rounded-[14px] border border-[#dccdb4] bg-[#faf5eb] p-3 text-[14px] text-[#4a4039] placeholder-[#c5b090] focus-visible:outline-2 focus-visible:outline-terracota"
@@ -1084,10 +1438,19 @@ function DetalleDeberModal({
           {/* Botón de confirmación */}
           <button
             type="button"
-            onClick={puedeConfirmar ? () => onConfirmar(fotoUrl || undefined, nota || undefined) : undefined}
+            onClick={
+              puedeConfirmar
+                ? () =>
+                    onConfirmar(
+                      fotoUrl || undefined,
+                      nota || undefined,
+                      tipo === "cubrir" ? seleccionados : undefined,
+                    )
+                : undefined
+            }
             disabled={!puedeConfirmar || isSubmitting}
             aria-disabled={!puedeConfirmar || isSubmitting}
-            className={`mt-5 flex w-full items-center justify-center gap-2.5 rounded-[16px] p-[16px] font-display text-[17px] font-bold tracking-[-0.01em] text-white transition-colors disabled:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta ${isSubmitting ? "cursor-wait" : "disabled:cursor-not-allowed"}`}
+            className={`mt-5 flex w-full items-center justify-center gap-2.5 rounded-[16px] p-[16px] font-display text-[16px] font-bold tracking-[-0.01em] text-white transition-colors disabled:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta ${isSubmitting ? "cursor-wait" : "disabled:cursor-not-allowed"}`}
             style={{
               background: puedeConfirmar
                 ? "linear-gradient(180deg,#E2733F,#D2602F)"
@@ -1099,7 +1462,9 @@ function DetalleDeberModal({
           >
             {isSubmitting ? (
               <>
-                <span aria-hidden="true" className="animate-spin text-[16px]">⏳</span>
+                <span aria-hidden="true" className="animate-spin text-[16px]">
+                  ⏳
+                </span>
                 Procesando...
               </>
             ) : (
@@ -1122,11 +1487,6 @@ function DetalleDeberModal({
 
 // ── Utilidad ────────────────────────────────────────────────────────────────
 
-/**
- * Convierte un string de estilo CSS ("background:#fff;border:1px ...") en el
- * objeto que React espera. Se usa para los estilos de tarjeta/anillo de cada
- * hermano, que vienen como dato (dependen del rol y de quién es "yo").
- */
 function parseStyle(css: string): React.CSSProperties {
   const estilo: Record<string, string> = {};
   for (const regla of css.split(";")) {

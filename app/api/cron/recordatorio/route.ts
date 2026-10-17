@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import {
   asignaciones,
+  criteriosDeber,
   deberes,
   participantes,
   suscripcionesPush,
@@ -187,23 +188,37 @@ export async function GET(request: Request) {
           )
         );
 
-      const registrosHoy = await db
-        .select()
-        .from(registros)
-        .where(
-          and(
-            eq(registros.fecha, fechaHoyStr),
-            eq(registros.estado, "cumplido_propio")
-          )
-        );
+      const [registrosHoy, todosCriterios] = await Promise.all([
+        db.select().from(registros).where(eq(registros.fecha, fechaHoyStr)),
+        db.select().from(criteriosDeber),
+      ]);
 
       const pendientesPorUsuario = new Map<string, typeof asignacionesHoy>();
 
       for (const asig of asignacionesHoy) {
-        const yaCumplido = registrosHoy.some(
-          (r) => r.participanteId === asig.participanteId && r.deberId === asig.deberId
+        const criteriosDeEste = todosCriterios.filter((c) => c.deberId === asig.deberId);
+        const regsDeEste = registrosHoy.filter(
+          (r) =>
+            r.deberId === asig.deberId &&
+            (r.estado === "cumplido_propio" || r.estado === "cubrio_a_otro"),
         );
-        if (!yaCumplido) {
+
+        let yaCumplidoCompleto = false;
+        if (criteriosDeEste.length === 0) {
+          yaCumplidoCompleto = regsDeEste.length > 0;
+        } else {
+          const completados = new Set<string>();
+          for (const r of regsDeEste) {
+            if (r.criteriosIds === null) {
+              criteriosDeEste.forEach((c) => completados.add(c.id));
+            } else {
+              r.criteriosIds.forEach((id) => completados.add(id));
+            }
+          }
+          yaCumplidoCompleto = criteriosDeEste.every((c) => completados.has(c.id));
+        }
+
+        if (!yaCumplidoCompleto) {
           const list = pendientesPorUsuario.get(asig.participanteId) || [];
           list.push(asig);
           pendientesPorUsuario.set(asig.participanteId, list);
@@ -325,21 +340,33 @@ export async function GET(request: Request) {
           )
         );
 
-      const registrosHoy = await db
-        .select()
-        .from(registros)
-        .where(
-          and(
-            eq(registros.fecha, fechaHoyStr),
-            eq(registros.estado, "cumplido_propio")
-          )
+      const [registrosHoy, todosCriterios] = await Promise.all([
+        db.select().from(registros).where(eq(registros.fecha, fechaHoyStr)),
+        db.select().from(criteriosDeber),
+      ]);
+
+      const noCumplidos = deberesObligatoriosHoy.filter((asig) => {
+        const criteriosDeEste = todosCriterios.filter((c) => c.deberId === asig.deberId);
+        const regsDeEste = registrosHoy.filter(
+          (r) =>
+            r.deberId === asig.deberId &&
+            (r.estado === "cumplido_propio" || r.estado === "cubrio_a_otro"),
         );
+        if (criteriosDeEste.length === 0) {
+          return regsDeEste.length === 0;
+        }
+        const completados = new Set<string>();
+        for (const r of regsDeEste) {
+          if (r.criteriosIds === null) {
+            criteriosDeEste.forEach((c) => completados.add(c.id));
+          } else {
+            r.criteriosIds.forEach((id) => completados.add(id));
+          }
+        }
+        return !criteriosDeEste.every((c) => completados.has(c.id));
+      });
 
-      const noCumplidos = deberesObligatoriosHoy.filter(
-        (asig) => !registrosHoy.some((r) => r.deberId === asig.deberId)
-      );
-
-      // SOLO si quedan tareas obligatorias sin hacer, alertamos a todos los hermanos
+      // SOLO si quedan tareas obligatorias (o criterios de ellas) sin hacer, alertamos a todos los hermanos
       if (noCumplidos.length > 0) {
         const nombresFaltantes = Array.from(
           new Set(noCumplidos.map((d) => d.deberNombre))
@@ -350,7 +377,7 @@ export async function GET(request: Request) {
             enviarPush(
               sub,
               `⚠️ ¡Atención hogar! Tareas pendientes`,
-              `Quedan deberes obligatorios sin hacer hoy (${nombresFaltantes}). ¡Eviten la penalización de -10 pts antes de las 3:00 AM!`,
+              `Quedan deberes obligatorios sin terminar hoy (${nombresFaltantes}). ¡Eviten penalizaciones antes de las 3:00 AM!`,
               `/${sub.participanteId}`
             )
           );

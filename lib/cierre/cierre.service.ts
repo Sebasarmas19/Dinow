@@ -11,6 +11,7 @@ import { formatearFechaISO } from "@/lib/shared/date";
 import {
   contarPenalizacionesDelDia,
   listarAsignacionesConDeber,
+  listarCriteriosDeDeberes,
   listarRegistrosDelDia,
 } from "./cierre.repo";
 
@@ -20,11 +21,16 @@ import {
  * Es el "lado negativo" de los puntos: corre cuando el día ya terminó (a las
  * 3 AM de Caracas, disparado por el cron) y revisa lo que quedó SIN hacer.
  *
- * Reglas que aplica (Art. 5 del reglamento):
- * 1. Si el responsable no hizo su deber rotativo y no tiene ausencia válida →
- *    penalización por fallo (−penalizacion_fallo). Afecta General y Confiable.
- * 2. Si un deber NO NEGOCIABLE no lo hizo nadie (ni el responsable ni alguien
- *    cubriéndolo) → penalización colectiva (−penalizacion_colectiva) a los tres.
+ * Reglas que aplica (Art. 5 del reglamento + criterios proporcionales):
+ * 1. Si el responsable no hizo NADA de su deber rotativo (K_propio === 0) y no
+ *    tiene ausencia válida → penalización completa (−penalizacion_fallo), incluso
+ *    si otro hermano lo cubrió por completo.
+ * 2. Si el responsable hizo parte de sus criterios (K_propio > 0) pero quedaron
+ *    F criterios sin hacer por nadie → penalización proporcional −(F / N) * penalizacion_fallo.
+ * 3. Si el responsable hizo parte (K_propio > 0) y un hermano cubrió el resto
+ *    (F === 0) → 0 penalización (deber compartido 100% cumplido).
+ * 4. Si un deber NO NEGOCIABLE no tuvo ningún criterio cumplido por nadie
+ *    (F === N) → penalización colectiva (−penalizacion_colectiva) a los tres.
  *
  * Es IDEMPOTENTE a nivel de día: si ya se aplicaron penalizaciones para esa
  * fecha, no se vuelve a cerrar (salvo `{ forzar: true }`).
@@ -59,6 +65,9 @@ export async function cerrarDia(
     listarParticipantesActivos(hogarId),
   ]);
 
+  const deberIds = Array.from(new Set(planDelDia.map((p) => p.deber.id)));
+  const todosLosCriterios = await listarCriteriosDeDeberes(deberIds);
+
   const ausentes = await idsAusentesEnFecha(
     participantesActivos.map((p) => p.id),
     fechaStr,
@@ -70,44 +79,131 @@ export async function cerrarDia(
   let aplicadas = 0;
 
   for (const { asignacion, deber } of planDelDia) {
-    // ¿El responsable lo hizo él mismo?
-    const hechoPorDueño = registrosDelDia.some(
-      (r) =>
-        r.deberId === deber.id &&
-        r.participanteId === asignacion.participanteId &&
-        r.estado === "cumplido_propio",
-    );
-    if (hechoPorDueño) continue; // todo en orden, no hay penalización
+    // Los deberes personales son extras individuales sin penalización
+    if (deber.esPersonal) continue;
 
-    // ¿Alguien lo cubrió?
-    const fueCubierto = registrosDelDia.some(
-      (r) =>
-        r.deberId === deber.id &&
-        r.estado === "cubrio_a_otro" &&
-        r.cubiertoA === asignacion.participanteId,
+    const criteriosDeberActual = todosLosCriterios.filter(
+      (c) => c.deberId === deber.id,
+    );
+    const totalCriterios = criteriosDeberActual.length;
+
+    const registrosDeEsteDeber = registrosDelDia.filter(
+      (r) => r.deberId === deber.id,
     );
 
-    // (1) El responsable falló su deber → penalización individual, salvo que
-    // tenga una ausencia válida ese día (queda inmune, Art. 4).
-    if (!ausentes.has(asignacion.participanteId)) {
-      await otorgarPenalizacionFallo(
-        hogarId,
-        asignacion.participanteId,
-        fechaStr,
-        penalizacionFallo,
+    if (totalCriterios === 0) {
+      // Caso sin criterios configurados (100% o 0%)
+      const hechoPorDueño = registrosDeEsteDeber.some(
+        (r) =>
+          r.participanteId === asignacion.participanteId &&
+          r.estado === "cumplido_propio",
       );
-      aplicadas++;
+      if (hechoPorDueño) continue;
+
+      const fueCubierto = registrosDeEsteDeber.some(
+        (r) =>
+          r.estado === "cubrio_a_otro" &&
+          r.cubiertoA === asignacion.participanteId,
+      );
+
+      if (!ausentes.has(asignacion.participanteId)) {
+        await otorgarPenalizacionFallo(
+          hogarId,
+          asignacion.participanteId,
+          fechaStr,
+          penalizacionFallo,
+        );
+        aplicadas++;
+      }
+
+      if (deber.esObligatorio && !fueCubierto) {
+        for (const p of participantesActivos) {
+          if (ausentes.has(p.id)) continue;
+          await otorgarPenalizacionColectiva(
+            hogarId,
+            p.id,
+            fechaStr,
+            penalizacionColectiva,
+          );
+          aplicadas++;
+        }
+      }
+      continue;
     }
 
-    // (2) Nadie lo hizo y es no negociable → penalización colectiva a los tres.
-    if (deber.esObligatorio && !fueCubierto) {
+    // Caso con N criterios de aceptación
+    const criteriosHechosPorDueno = new Set<string>();
+    const criteriosCubiertosPorOtros = new Set<string>();
+
+    for (const r of registrosDeEsteDeber) {
+      if (
+        r.estado === "cumplido_propio" &&
+        r.participanteId === asignacion.participanteId
+      ) {
+        if (r.criteriosIds === null) {
+          criteriosDeberActual.forEach((c) => criteriosHechosPorDueno.add(c.id));
+        } else {
+          r.criteriosIds.forEach((id) => criteriosHechosPorDueno.add(id));
+        }
+      } else if (
+        r.estado === "cubrio_a_otro" &&
+        r.cubiertoA === asignacion.participanteId
+      ) {
+        if (r.criteriosIds === null) {
+          criteriosDeberActual.forEach((c) =>
+            criteriosCubiertosPorOtros.add(c.id),
+          );
+        } else {
+          r.criteriosIds.forEach((id) => criteriosCubiertosPorOtros.add(id));
+        }
+      }
+    }
+
+    const criteriosTotalesCumplidos = new Set<string>([
+      ...criteriosHechosPorDueno,
+      ...criteriosCubiertosPorOtros,
+    ]);
+
+    const kPropio = criteriosHechosPorDueno.size;
+    const faltantes = Math.max(0, totalCriterios - criteriosTotalesCumplidos.size);
+
+    // Si el dueño hizo al menos 1 criterio y entre él y sus hermanos completaron el 100% (faltantes === 0):
+    // ¡Deber compartido 100% cumplido! Sin penalización.
+    if (kPropio > 0 && faltantes === 0) {
+      continue;
+    }
+
+    // Penalización individual al responsable (salvo ausencia válida):
+    // - Si el dueño no hizo NADA (kPropio === 0), recibe la penalización completa (-15 pts),
+    //   incluso si un hermano tuvo que cubrirle el 100% del deber (Art. 5.1).
+    // - Si el dueño hizo parte (kPropio > 0) pero dejó `faltantes` criterios sin hacer,
+    //   recibe la penalización proporcional a los criterios faltantes: -(faltantes / totalCriterios) * penalizacionFallo.
+    if (!ausentes.has(asignacion.participanteId)) {
+      const fraccionFallo =
+        kPropio === 0 ? 1 : faltantes / totalCriterios;
+      const montoPenalizacion = penalizacionFallo * fraccionFallo;
+      if (montoPenalizacion > 0) {
+        await otorgarPenalizacionFallo(
+          hogarId,
+          asignacion.participanteId,
+          fechaStr,
+          montoPenalizacion,
+        );
+        aplicadas++;
+      }
+    }
+
+    // Penalización colectiva (Art. 5.2): si es obligatorio y quedan criterios sin hacer por nadie
+    if (deber.esObligatorio && faltantes > 0) {
+      const fraccionColectiva = faltantes / totalCriterios;
+      const montoColectivo = penalizacionColectiva * fraccionColectiva;
       for (const p of participantesActivos) {
-        if (ausentes.has(p.id)) continue; // Los ausentes con razón válida están protegidos
+        if (ausentes.has(p.id)) continue;
         await otorgarPenalizacionColectiva(
           hogarId,
           p.id,
           fechaStr,
-          penalizacionColectiva,
+          Math.round(montoColectivo * 100) / 100,
         );
         aplicadas++;
       }

@@ -1,6 +1,12 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { asignaciones, deberes, registros, transaccionesPuntos } from "@/lib/db/schema";
+import {
+  asignaciones,
+  criteriosDeber,
+  deberes,
+  registros,
+  transaccionesPuntos,
+} from "@/lib/db/schema";
 
 /**
  * Acceso a datos del motor de cierre del día. Solo consultas; las reglas de
@@ -23,6 +29,15 @@ export async function listarAsignacionesConDeber(hogarId: string, fechaStr: stri
         eq(deberes.activo, true)
       ),
     );
+}
+
+/** Lista los criterios de aceptación de un conjunto de deberes. */
+export async function listarCriteriosDeDeberes(deberIds: string[]) {
+  if (deberIds.length === 0) return [];
+  return db
+    .select()
+    .from(criteriosDeber)
+    .where(inArray(criteriosDeber.deberId, deberIds));
 }
 
 /** Todos los registros (cumplimientos, coberturas, reclamos) de un día. */

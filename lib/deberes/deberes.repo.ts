@@ -41,6 +41,15 @@ export async function obtenerDeber(id: string): Promise<Deber | undefined> {
   return db.query.deberes.findFirst({ where: eq(deberes.id, id) });
 }
 
+/** Devuelve los criterios ordenados de un deber por su id. */
+export async function obtenerCriteriosDeDeber(deberId: string) {
+  return db
+    .select()
+    .from(criteriosDeber)
+    .where(eq(criteriosDeber.deberId, deberId))
+    .orderBy(criteriosDeber.orden);
+}
+
 /** Inserta un deber y devuelve la fila creada. */
 export async function insertarDeber(valores: NuevoDeber): Promise<Deber> {
   const [fila] = await db.insert(deberes).values(valores).returning();

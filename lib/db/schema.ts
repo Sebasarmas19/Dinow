@@ -269,7 +269,39 @@ export const registros = pgTable("registros", {
   fotoUrl: text("foto_url"),
   // Justificacion.
   nota: text("nota"),
+  // IDs de criterios_deber cumplidos en este registro (null = todos los criterios / 100%).
+  criteriosIds: text("criterios_ids").array(),
   creadoEn: timestamp("creado_en", { withTimezone: true }).defaultNow(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// solicitudes_intercambio — peticiones de intercambio 1 a 1 de deberes por hoy.
+// ─────────────────────────────────────────────────────────────────────────────
+export const solicitudesIntercambio = pgTable("solicitudes_intercambio", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  hogarId: uuid("hogar_id")
+    .notNull()
+    .references(() => hogar.id, { onDelete: "cascade" }),
+  fecha: date("fecha").notNull(),
+  solicitanteId: uuid("solicitante_id")
+    .notNull()
+    .references(() => participantes.id, { onDelete: "cascade" }),
+  destinatarioId: uuid("destinatario_id")
+    .notNull()
+    .references(() => participantes.id, { onDelete: "cascade" }),
+  deberSolicitanteId: uuid("deber_solicitante_id")
+    .notNull()
+    .references(() => deberes.id, { onDelete: "cascade" }),
+  deberDestinatarioId: uuid("deber_destinatario_id")
+    .notNull()
+    .references(() => deberes.id, { onDelete: "cascade" }),
+  estado: text("estado", {
+    enum: ["pendiente", "aceptada", "rechazada", "cancelada"],
+  })
+    .notNull()
+    .default("pendiente"),
+  creadoEn: timestamp("creado_en", { withTimezone: true }).defaultNow(),
+  respondidoEn: timestamp("respondido_en", { withTimezone: true }),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
