@@ -73,8 +73,10 @@ export async function GET(request: Request) {
         slot = "tarde"; // 5:00 PM a 7:59 PM Caracas
       } else if (horaCaracas === 20 || (horaCaracas === 21 && minCaracas < 15)) {
         slot = "anticipacion"; // 8:00 PM a 9:14 PM Caracas
-      } else if ((horaCaracas === 21 && minCaracas >= 15) || horaCaracas === 22 || horaCaracas === 23) {
-        slot = "alerta_cierre"; // 9:15 PM a 11:59 PM Caracas
+      } else if ((horaCaracas === 21 && minCaracas >= 15) || horaCaracas === 22) {
+        slot = "alerta_cierre"; // 9:15 PM a 10:59 PM Caracas
+      } else if (horaCaracas === 23) {
+        slot = "recordatorio_marcar"; // 11:00 PM a 11:59 PM Caracas
       } else {
         // Fuera de cualquier ventana programada: NO enviar nada
         return Response.json({
@@ -380,6 +382,91 @@ export async function GET(request: Request) {
               `Quedan deberes obligatorios sin terminar hoy (${nombresFaltantes}). ¡Eviten penalizaciones antes de las 3:00 AM!`,
               `/${sub.participanteId}`
             )
+          );
+        }
+      }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 5. SLOT RECORDATORIO MARCAR (11:00 PM Caracas) - 📲 Aviso personal si ya lo hiciste pero olvidaste marcarlo
+    // ──────────────────────────────────────────────────────────────────────────
+    if (slot === "recordatorio_marcar") {
+      const asignacionesHoy = await db
+        .select({
+          participanteId: participantes.id,
+          participanteNombre: participantes.nombre,
+          deberId: deberes.id,
+          deberNombre: deberes.nombre,
+        })
+        .from(asignaciones)
+        .innerJoin(deberes, eq(asignaciones.deberId, deberes.id))
+        .innerJoin(
+          participantes,
+          eq(asignaciones.participanteId, participantes.id)
+        )
+        .where(
+          and(
+            eq(asignaciones.fecha, fechaHoyStr),
+            eq(deberes.esObligatorio, true),
+            eq(deberes.activo, true)
+          )
+        );
+
+      const [registrosHoy, todosCriterios] = await Promise.all([
+        db.select().from(registros).where(eq(registros.fecha, fechaHoyStr)),
+        db.select().from(criteriosDeber),
+      ]);
+
+      for (const asig of asignacionesHoy) {
+        const criteriosDeEste = todosCriterios.filter(
+          (c) => c.deberId === asig.deberId
+        );
+        const regsDeEste = registrosHoy.filter(
+          (r) =>
+            r.deberId === asig.deberId &&
+            (r.estado === "cumplido_propio" || r.estado === "cubrio_a_otro")
+        );
+
+        let completadosCount = 0;
+        const totalCrit = criteriosDeEste.length;
+        let yaCumplidoCompleto = false;
+
+        if (totalCrit === 0) {
+          yaCumplidoCompleto = regsDeEste.length > 0;
+        } else {
+          const completados = new Set<string>();
+          for (const r of regsDeEste) {
+            if (r.criteriosIds === null) {
+              criteriosDeEste.forEach((c) => completados.add(c.id));
+            } else {
+              r.criteriosIds.forEach((id) => completados.add(id));
+            }
+          }
+          completadosCount = completados.size;
+          yaCumplidoCompleto = criteriosDeEste.every((c) =>
+            completados.has(c.id)
+          );
+        }
+
+        if (yaCumplidoCompleto) continue; // Ya está 100% marcado, no molestar
+
+        const subsDelEncargado = suscripcionesValidas.filter(
+          (s) => s.participanteId === asig.participanteId
+        );
+
+        const titulo =
+          completadosCount > 0 && totalCrit > 0
+            ? `📲 ¡Oye ${asig.participanteNombre}! Te falta marcar en ${asig.deberNombre}`
+            : `📲 ¡Oye ${asig.participanteNombre}! ¿Ya hiciste ${asig.deberNombre}?`;
+
+        const cuerpo =
+          completadosCount > 0 && totalCrit > 0
+            ? `Llevas ${completadosCount}/${totalCrit} criterios marcados hoy. Si ya terminaste el resto, ¡entra un segundo y márcalo antes de dormir!`
+            : `Si ya terminaste tu deber de hoy, ¡no olvides entrar a la app y marcarlo como cumplido antes de dormir!`;
+
+        for (const sub of subsDelEncargado) {
+          envios.push(
+            enviarPush(sub, titulo, cuerpo, `/${sub.participanteId}`)
           );
         }
       }
