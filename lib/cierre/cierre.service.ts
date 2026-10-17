@@ -1,4 +1,5 @@
 import { obtenerHogarActual } from "@/lib/hogar/hogar.service";
+import { obtenerCriteriosEfectivosDeDeber } from "@/lib/intercambio/intercambio.service";
 import {
   otorgarPenalizacionColectiva,
   otorgarPenalizacionFallo,
@@ -11,7 +12,6 @@ import { formatearFechaISO } from "@/lib/shared/date";
 import {
   contarPenalizacionesDelDia,
   listarAsignacionesConDeber,
-  listarCriteriosDeDeberes,
   listarRegistrosDelDia,
 } from "./cierre.repo";
 
@@ -21,19 +21,16 @@ import {
  * Es el "lado negativo" de los puntos: corre cuando el día ya terminó (a las
  * 3 AM de Caracas, disparado por el cron) y revisa lo que quedó SIN hacer.
  *
- * Reglas que aplica (Art. 5 del reglamento + criterios proporcionales):
- * 1. Si el responsable no hizo NADA de su deber rotativo (K_propio === 0) y no
+ * Reglas que aplica (Art. 5 del reglamento + criterios proporcionales + intercambios):
+ * 1. Si el responsable no hizo NADA de su lista efectiva del día (K_propio === 0) y no
  *    tiene ausencia válida → penalización completa (−penalizacion_fallo), incluso
  *    si otro hermano lo cubrió por completo.
- * 2. Si el responsable hizo parte de sus criterios (K_propio > 0) pero quedaron
+ * 2. Si el responsable hizo parte de sus criterios efectivos (K_propio > 0) pero quedaron
  *    F criterios sin hacer por nadie → penalización proporcional −(F / N) * penalizacion_fallo.
  * 3. Si el responsable hizo parte (K_propio > 0) y un hermano cubrió el resto
  *    (F === 0) → 0 penalización (deber compartido 100% cumplido).
- * 4. Si un deber NO NEGOCIABLE no tuvo ningún criterio cumplido por nadie
- *    (F === N) → penalización colectiva (−penalizacion_colectiva) a los tres.
- *
- * Es IDEMPOTENTE a nivel de día: si ya se aplicaron penalizaciones para esa
- * fecha, no se vuelve a cerrar (salvo `{ forzar: true }`).
+ * 4. Si en un deber NO NEGOCIABLE quedaron F > 0 criterios sin hacer por nadie →
+ *    penalización colectiva proporcional a los tres hermanos.
  */
 
 export type ResultadoCierre = {
@@ -65,9 +62,6 @@ export async function cerrarDia(
     listarParticipantesActivos(hogarId),
   ]);
 
-  const deberIds = Array.from(new Set(planDelDia.map((p) => p.deber.id)));
-  const todosLosCriterios = await listarCriteriosDeDeberes(deberIds);
-
   const ausentes = await idsAusentesEnFecha(
     participantesActivos.map((p) => p.id),
     fechaStr,
@@ -82,9 +76,13 @@ export async function cerrarDia(
     // Los deberes personales son extras individuales sin penalización
     if (deber.esPersonal) continue;
 
-    const criteriosDeberActual = todosLosCriterios.filter(
-      (c) => c.deberId === deber.id,
-    );
+    const { efectivos: criteriosDeberActual } =
+      await obtenerCriteriosEfectivosDeDeber(
+        hogarId,
+        fechaStr,
+        deber.id,
+        asignacion.participanteId,
+      );
     const totalCriterios = criteriosDeberActual.length;
 
     const registrosDeEsteDeber = registrosDelDia.filter(
@@ -92,7 +90,6 @@ export async function cerrarDia(
     );
 
     if (totalCriterios === 0) {
-      // Caso sin criterios configurados (100% o 0%)
       const hechoPorDueño = registrosDeEsteDeber.some(
         (r) =>
           r.participanteId === asignacion.participanteId &&
@@ -131,7 +128,8 @@ export async function cerrarDia(
       continue;
     }
 
-    // Caso con N criterios de aceptación
+    // Caso con N criterios efectivos de aceptación
+    const idsEfectivos = new Set(criteriosDeberActual.map((c) => c.id));
     const criteriosHechosPorDueno = new Set<string>();
     const criteriosCubiertosPorOtros = new Set<string>();
 
@@ -143,7 +141,9 @@ export async function cerrarDia(
         if (r.criteriosIds === null) {
           criteriosDeberActual.forEach((c) => criteriosHechosPorDueno.add(c.id));
         } else {
-          r.criteriosIds.forEach((id) => criteriosHechosPorDueno.add(id));
+          r.criteriosIds
+            .filter((id) => idsEfectivos.has(id))
+            .forEach((id) => criteriosHechosPorDueno.add(id));
         }
       } else if (
         r.estado === "cubrio_a_otro" &&
@@ -154,7 +154,9 @@ export async function cerrarDia(
             criteriosCubiertosPorOtros.add(c.id),
           );
         } else {
-          r.criteriosIds.forEach((id) => criteriosCubiertosPorOtros.add(id));
+          r.criteriosIds
+            .filter((id) => idsEfectivos.has(id))
+            .forEach((id) => criteriosCubiertosPorOtros.add(id));
         }
       }
     }

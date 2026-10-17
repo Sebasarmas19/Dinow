@@ -8,12 +8,13 @@ import {
   registros,
   planSemanal,
 } from "@/lib/db/schema";
+import { obtenerCriteriosEfectivosDeDeber } from "@/lib/intercambio/intercambio.service";
 import {
   obtenerFechaDeNegocio,
   formatearFechaISO,
   sumarDias,
 } from "@/lib/shared/date";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import webpush from "web-push";
 
 // Configurar web-push
@@ -29,13 +30,14 @@ export const dynamic = "force-dynamic";
 /**
  * Endpoint de recordatorios y notificaciones automáticas.
  *
- * Soporta 4 franjas horarias optimizadas para la Familia Armas:
- * 1. manana        (6:30 AM Caracas): Buenos días + Misión asignada hoy
- * 2. tarde         (6:30 PM Caracas): Tarde en casa (Paseo de Sofi / Pendientes)
- * 3. anticipacion  (8:30 PM Caracas): Plan de mañana (para preparar viandas/descongelar)
- * 4. alerta_cierre (9:30 PM Caracas): ⚠️ Alerta de penalización preventiva si faltan deberes
+ * Soporta 5 franjas horarias optimizadas para la Familia Armas:
+ * 1. manana              (6:30 AM Caracas): Buenos días + Misión asignada hoy
+ * 2. tarde               (6:30 PM Caracas): Tarde en casa (Paseo de Sofi / Pendientes)
+ * 3. anticipacion        (8:30 PM Caracas): Plan de mañana (para preparar viandas/descongelar)
+ * 4. alerta_cierre       (9:30 PM Caracas): ⚠️ Alerta de penalización preventiva si faltan deberes
+ * 5. recordatorio_marcar (11:00 PM Caracas): 📲 Aviso personal si olvidaste marcar tu deber
  *
- * Puede llamarse con ?slot=manana | tarde | anticipacion | alerta_cierre
+ * Puede llamarse con ?slot=manana | tarde | anticipacion | alerta_cierre | recordatorio_marcar
  * o dejar que detecte automáticamente el horario UTC actual.
  */
 export async function GET(request: Request) {
@@ -163,14 +165,12 @@ export async function GET(request: Request) {
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // 2. SLOT ALMUERZO (1:30 PM Caracas) - Fregado / Cocina de mediodía
-    // ──────────────────────────────────────────────────────────────────────────
-    // ──────────────────────────────────────────────────────────────────────────
     // 2. SLOT TARDE (6:30 PM Caracas) - Regreso a casa / Paseo de Sofi / Pendientes
     // ──────────────────────────────────────────────────────────────────────────
     if (slot === "tarde") {
       const asignacionesHoy = await db
         .select({
+          hogarId: asignaciones.hogarId,
           participanteNombre: participantes.nombre,
           participanteId: participantes.id,
           deberNombre: deberes.nombre,
@@ -190,15 +190,21 @@ export async function GET(request: Request) {
           )
         );
 
-      const [registrosHoy, todosCriterios] = await Promise.all([
-        db.select().from(registros).where(eq(registros.fecha, fechaHoyStr)),
-        db.select().from(criteriosDeber),
-      ]);
+      const registrosHoy = await db
+        .select()
+        .from(registros)
+        .where(eq(registros.fecha, fechaHoyStr));
 
       const pendientesPorUsuario = new Map<string, typeof asignacionesHoy>();
 
       for (const asig of asignacionesHoy) {
-        const criteriosDeEste = todosCriterios.filter((c) => c.deberId === asig.deberId);
+        const { efectivos: criteriosDeEste } =
+          await obtenerCriteriosEfectivosDeDeber(
+            asig.hogarId,
+            fechaHoyStr,
+            asig.deberId,
+            asig.participanteId,
+          );
         const regsDeEste = registrosHoy.filter(
           (r) =>
             r.deberId === asig.deberId &&
@@ -324,6 +330,8 @@ export async function GET(request: Request) {
     if (slot === "alerta_cierre") {
       const deberesObligatoriosHoy = await db
         .select({
+          hogarId: asignaciones.hogarId,
+          participanteId: participantes.id,
           deberId: deberes.id,
           deberNombre: deberes.nombre,
           participanteNombre: participantes.nombre,
@@ -342,20 +350,29 @@ export async function GET(request: Request) {
           )
         );
 
-      const [registrosHoy, todosCriterios] = await Promise.all([
-        db.select().from(registros).where(eq(registros.fecha, fechaHoyStr)),
-        db.select().from(criteriosDeber),
-      ]);
+      const registrosHoy = await db
+        .select()
+        .from(registros)
+        .where(eq(registros.fecha, fechaHoyStr));
 
-      const noCumplidos = deberesObligatoriosHoy.filter((asig) => {
-        const criteriosDeEste = todosCriterios.filter((c) => c.deberId === asig.deberId);
+      const noCumplidos: typeof deberesObligatoriosHoy = [];
+
+      for (const asig of deberesObligatoriosHoy) {
+        const { efectivos: criteriosDeEste } =
+          await obtenerCriteriosEfectivosDeDeber(
+            asig.hogarId,
+            fechaHoyStr,
+            asig.deberId,
+            asig.participanteId,
+          );
         const regsDeEste = registrosHoy.filter(
           (r) =>
             r.deberId === asig.deberId &&
             (r.estado === "cumplido_propio" || r.estado === "cubrio_a_otro"),
         );
         if (criteriosDeEste.length === 0) {
-          return regsDeEste.length === 0;
+          if (regsDeEste.length === 0) noCumplidos.push(asig);
+          continue;
         }
         const completados = new Set<string>();
         for (const r of regsDeEste) {
@@ -365,8 +382,10 @@ export async function GET(request: Request) {
             r.criteriosIds.forEach((id) => completados.add(id));
           }
         }
-        return !criteriosDeEste.every((c) => completados.has(c.id));
-      });
+        if (!criteriosDeEste.every((c) => completados.has(c.id))) {
+          noCumplidos.push(asig);
+        }
+      }
 
       // SOLO si quedan tareas obligatorias (o criterios de ellas) sin hacer, alertamos a todos los hermanos
       if (noCumplidos.length > 0) {
@@ -393,6 +412,7 @@ export async function GET(request: Request) {
     if (slot === "recordatorio_marcar") {
       const asignacionesHoy = await db
         .select({
+          hogarId: asignaciones.hogarId,
           participanteId: participantes.id,
           participanteNombre: participantes.nombre,
           deberId: deberes.id,
@@ -412,15 +432,19 @@ export async function GET(request: Request) {
           )
         );
 
-      const [registrosHoy, todosCriterios] = await Promise.all([
-        db.select().from(registros).where(eq(registros.fecha, fechaHoyStr)),
-        db.select().from(criteriosDeber),
-      ]);
+      const registrosHoy = await db
+        .select()
+        .from(registros)
+        .where(eq(registros.fecha, fechaHoyStr));
 
       for (const asig of asignacionesHoy) {
-        const criteriosDeEste = todosCriterios.filter(
-          (c) => c.deberId === asig.deberId
-        );
+        const { efectivos: criteriosDeEste } =
+          await obtenerCriteriosEfectivosDeDeber(
+            asig.hogarId,
+            fechaHoyStr,
+            asig.deberId,
+            asig.participanteId,
+          );
         const regsDeEste = registrosHoy.filter(
           (r) =>
             r.deberId === asig.deberId &&
@@ -439,7 +463,9 @@ export async function GET(request: Request) {
             if (r.criteriosIds === null) {
               criteriosDeEste.forEach((c) => completados.add(c.id));
             } else {
-              r.criteriosIds.forEach((id) => completados.add(id));
+              r.criteriosIds
+                .filter((id) => criteriosDeEste.some((c) => c.id === id))
+                .forEach((id) => completados.add(id));
             }
           }
           completadosCount = completados.size;

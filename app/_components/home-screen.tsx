@@ -6,7 +6,6 @@ import {
   marcarCumplidoAction,
   cubrirDeberAction,
   reclamarExtraAction,
-  confirmarCoberturaAction,
 } from "@/lib/cumplimiento/cumplimiento.actions";
 import {
   solicitarIntercambioAction,
@@ -29,6 +28,8 @@ export type CriterioEstado = {
   completado: boolean;
   completadoPorNombre?: string;
   esPropio?: boolean;
+  esIntercambiado?: boolean;
+  intercambiadoConNombre?: string;
 };
 
 export type DeberHoy = {
@@ -65,6 +66,7 @@ export type HermanoEstado = {
   criteriosCompletados?: number;
   criteriosTotales?: number;
   puedeIntercambiar?: boolean;
+  puedeIntercambiarTodoElDeber?: boolean;
   ringStyle: string;
   cardStyle: string;
 };
@@ -91,6 +93,8 @@ export type SolicitudIntercambioUI = {
   deberSolicitanteIcono: string;
   deberDestinatarioNombre: string;
   deberDestinatarioIcono: string;
+  criteriosSolicitanteLabels?: string[];
+  criteriosDestinatarioLabels?: string[];
   esRecibida: boolean;
 };
 
@@ -147,6 +151,9 @@ export function HomeScreen({
   const [isSaliendo, setIsSaliendo] = useState(false);
 
   const [modal, setModal] = useState<ModalData | null>(null);
+  const [modalIntercambioHermanoIdx, setModalIntercambioHermanoIdx] = useState<
+    number | null
+  >(null);
 
   const todosMisDeberesCumplidos =
     deberesHoy.length > 0 && deberesHoy.every((d) => d.cumplido);
@@ -230,19 +237,6 @@ export function HomeScreen({
     });
   };
 
-  const handlePedirIntercambio = (destinatarioId: string, nombreHermano: string) => {
-    startTransition(async () => {
-      const res = await solicitarIntercambioAction(miId, destinatarioId);
-      if (res.ok) {
-        toast.success(`Petición de intercambio enviada a ${nombreHermano}`);
-        await notificarCambioHogar("intercambio_solicitado");
-        router.refresh();
-      } else {
-        toast.error(res.error);
-      }
-    });
-  };
-
   const handleResponderIntercambio = (solicitudId: string, aceptar: boolean) => {
     startTransition(async () => {
       const res = await responderIntercambioAction(solicitudId, miId, aceptar);
@@ -286,7 +280,7 @@ export function HomeScreen({
           opacity: isPending ? 0.6 : 1,
           transition: "opacity 0.2s",
         }}
-        inert={!!modal || isPending}
+        inert={!!modal || modalIntercambioHermanoIdx !== null || isPending}
       >
         {/* Saludo + fecha */}
         <header className="px-0.5 pb-4 pt-2">
@@ -317,8 +311,14 @@ export function HomeScreen({
         {/* Banners de solicitudes de intercambio pendientes */}
         {intercambiosPendientes.length > 0 && (
           <section aria-label="Peticiones de intercambio" className="mb-4 space-y-2.5">
-            {intercambiosPendientes.map((sol) =>
-              sol.esRecibida ? (
+            {intercambiosPendientes.map((sol) => {
+              const esParcial =
+                sol.criteriosSolicitanteLabels &&
+                sol.criteriosSolicitanteLabels.length > 0 &&
+                sol.criteriosDestinatarioLabels &&
+                sol.criteriosDestinatarioLabels.length > 0;
+
+              return sol.esRecibida ? (
                 <div
                   key={sol.id}
                   className="rounded-[22px] border-2 border-[#e2733f] bg-[#fff4ec] p-4 shadow-sm"
@@ -329,19 +329,36 @@ export function HomeScreen({
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="font-display text-[14.5px] font-extrabold text-tinta leading-snug">
-                        {sol.solicitanteNombre} te pide intercambiar hoy
+                        {sol.solicitanteNombre} te pide intercambiar{" "}
+                        {esParcial ? "criterios hoy" : "su deber por hoy"}
                       </p>
-                      <p className="mt-1 text-[12.5px] font-medium text-[#6e5d4f] leading-snug">
-                        Tú harías{" "}
-                        <strong>
-                          {sol.deberSolicitanteIcono} {sol.deberSolicitanteNombre}
-                        </strong>{" "}
-                        y {sol.solicitanteNombre} haría{" "}
-                        <strong>
-                          {sol.deberDestinatarioIcono} {sol.deberDestinatarioNombre}
-                        </strong>{" "}
-                        (ambos por sus +10 pts normales).
-                      </p>
+                      {esParcial ? (
+                        <div className="mt-1.5 space-y-1 text-[12px] font-medium text-[#6e5d4f] leading-snug">
+                          <p>
+                            • <strong>Tú harías ({sol.deberSolicitanteNombre}):</strong>{" "}
+                            {sol.criteriosSolicitanteLabels!.join(", ")}
+                          </p>
+                          <p>
+                            • <strong>{sol.solicitanteNombre} haría ({sol.deberDestinatarioNombre}):</strong>{" "}
+                            {sol.criteriosDestinatarioLabels!.join(", ")}
+                          </p>
+                          <p className="text-[11px] font-bold text-[#c25a2e]">
+                            Ambos ganan sus +10 pts normales al cumplir su lista.
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="mt-1 text-[12.5px] font-medium text-[#6e5d4f] leading-snug">
+                          Tú harías{" "}
+                          <strong>
+                            {sol.deberSolicitanteIcono} {sol.deberSolicitanteNombre}
+                          </strong>{" "}
+                          y {sol.solicitanteNombre} haría{" "}
+                          <strong>
+                            {sol.deberDestinatarioIcono} {sol.deberDestinatarioNombre}
+                          </strong>{" "}
+                          (ambos por sus +10 pts normales).
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="mt-3 flex gap-2">
@@ -370,8 +387,10 @@ export function HomeScreen({
                 >
                   <p className="text-[12px] font-semibold text-[#7c6b58]">
                     ⏳ Esperando a <strong>{sol.destinatarioNombre}</strong> para
-                    cambiar por {sol.deberDestinatarioIcono}{" "}
-                    {sol.deberDestinatarioNombre}
+                    intercambiar{" "}
+                    {esParcial
+                      ? "criterios seleccionados"
+                      : `por ${sol.deberDestinatarioIcono} ${sol.deberDestinatarioNombre}`}
                   </p>
                   <button
                     type="button"
@@ -382,8 +401,8 @@ export function HomeScreen({
                     Cancelar
                   </button>
                 </div>
-              ),
-            )}
+              );
+            })}
           </section>
         )}
 
@@ -533,31 +552,31 @@ export function HomeScreen({
                   </div>
 
                   {/* Acciones hacia el hermano: Cubrir criterios y/o Intercambiar */}
-                  {!h.esYo && (puedeCubrir || (h.puedeIntercambiar && !yaHaySolicitudConEl)) && (
-                    <div className="mt-[9px] flex flex-col gap-1.5">
-                      {puedeCubrir && (
-                        <button
-                          type="button"
-                          onClick={() => abrirModalCubrir(i)}
-                          className="w-full rounded-[11px] border-[1.5px] border-[#e6b79c] bg-[#fff4ec] px-1 py-[6px] text-[10.5px] font-extrabold text-[#c25a2e] transition-colors hover:bg-[#ffe9db] active:scale-[0.97]"
-                        >
-                          {cobertura ? "+ Cubrir otro" : "Cubrir deber"}
-                        </button>
-                      )}
-                      {h.puedeIntercambiar && !yaHaySolicitudConEl && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handlePedirIntercambio(h.participanteId, h.nombre)
-                          }
-                          disabled={isPending}
-                          className="w-full rounded-[11px] border border-[#dccdb4] bg-[#faf5eb] px-1 py-[5px] text-[10px] font-bold text-[#7c6b58] transition-colors hover:bg-[#f0e6d5] active:scale-[0.97] disabled:opacity-50"
-                        >
-                          🔄 Intercambiar
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  {!h.esYo &&
+                    (puedeCubrir ||
+                      (h.puedeIntercambiar && !yaHaySolicitudConEl)) && (
+                      <div className="mt-[9px] flex flex-col gap-1.5">
+                        {puedeCubrir && (
+                          <button
+                            type="button"
+                            onClick={() => abrirModalCubrir(i)}
+                            className="w-full rounded-[11px] border-[1.5px] border-[#e6b79c] bg-[#fff4ec] px-1 py-[6px] text-[10.5px] font-extrabold text-[#c25a2e] transition-colors hover:bg-[#ffe9db] active:scale-[0.97]"
+                          >
+                            {cobertura ? "+ Cubrir otro" : "Cubrir deber"}
+                          </button>
+                        )}
+                        {h.puedeIntercambiar && !yaHaySolicitudConEl && (
+                          <button
+                            type="button"
+                            onClick={() => setModalIntercambioHermanoIdx(i)}
+                            disabled={isPending}
+                            className="w-full rounded-[11px] border border-[#dccdb4] bg-[#faf5eb] px-1 py-[5px] text-[10px] font-bold text-[#7c6b58] transition-colors hover:bg-[#f0e6d5] active:scale-[0.97] disabled:opacity-50"
+                          >
+                            🔄 Intercambiar
+                          </button>
+                        )}
+                      </div>
+                    )}
                 </li>
               );
             })}
@@ -660,6 +679,37 @@ export function HomeScreen({
           El día cierra a las 3:00 AM · Caracas
         </p>
       </main>
+
+      {/* Modal de Intercambio (Deber completo o Criterios específicos) */}
+      {modalIntercambioHermanoIdx !== null && deberesHoy[0] && (
+        <ModalIntercambio
+          miDeber={deberesHoy[0]}
+          hermano={hermanos[modalIntercambioHermanoIdx]}
+          isSubmitting={isPending}
+          onClose={() => setModalIntercambioHermanoIdx(null)}
+          onConfirmar={(misCriteriosIds, susCriteriosIds) => {
+            const h = hermanos[modalIntercambioHermanoIdx];
+            startTransition(async () => {
+              const res = await solicitarIntercambioAction(
+                miId,
+                h.participanteId,
+                misCriteriosIds,
+                susCriteriosIds,
+              );
+              if (res.ok) {
+                toast.success(
+                  `Petición de intercambio enviada a ${h.nombre}`,
+                );
+                await notificarCambioHogar("intercambio_solicitado");
+                router.refresh();
+                setModalIntercambioHermanoIdx(null);
+              } else {
+                toast.error(res.error);
+              }
+            });
+          }}
+        />
+      )}
 
       {/* Modal para cubrir un deber o reclamar un extra */}
       {modal && (
@@ -823,7 +873,7 @@ function DeberPropioCard({
               {deber.icono}
             </span>
           </div>
-          {detalle.some((c) => !c.esPropio) && (
+          {detalle.some((c) => !c.esPropio || c.esIntercambiado) && (
             <div className="px-5 pt-3">
               <ul className="space-y-1.5">
                 {detalle.map((c) => (
@@ -833,7 +883,11 @@ function DeberPropioCard({
                   >
                     <span className="truncate pr-2">✓ {c.descripcion}</span>
                     <span className="flex-shrink-0 rounded-full bg-[#e3efdf] px-2 py-0.5 text-[10px] font-extrabold">
-                      {c.esPropio ? "Tú" : `Cubrió ${c.completadoPorNombre}`}
+                      {c.esIntercambiado
+                        ? `🔄 Trueque con ${c.intercambiadoConNombre}`
+                        : c.esPropio
+                          ? "Tú"
+                          : `Cubrió ${c.completadoPorNombre}`}
                     </span>
                   </li>
                 ))}
@@ -911,7 +965,9 @@ function DeberPropioCard({
                               ? c.esPropio
                                 ? "✓ Hecho por ti"
                                 : `✓ Cubierto por ${c.completadoPorNombre}`
-                              : `Toca para marcar (+${ptsPorCriterio} pts)`}
+                              : c.esIntercambiado
+                                ? `🔄 Trueque con ${c.intercambiadoConNombre} · Toca al cumplir (+${ptsPorCriterio} pts)`
+                                : `Toca para marcar (+${ptsPorCriterio} pts)`}
                           </span>
                         </div>
                       </button>
@@ -976,6 +1032,239 @@ function DeberPropioCard({
         </>
       )}
     </section>
+  );
+}
+
+// ── Modal de Intercambio (Deber completo o Criterios específicos) ───────────
+
+function ModalIntercambio({
+  miDeber,
+  hermano,
+  isSubmitting,
+  onClose,
+  onConfirmar,
+}: {
+  miDeber: DeberHoy;
+  hermano: HermanoEstado;
+  isSubmitting: boolean;
+  onClose: () => void;
+  onConfirmar: (
+    misCriteriosIds?: string[] | null,
+    susCriteriosIds?: string[] | null,
+  ) => void;
+}) {
+  const puedeTodo = Boolean(hermano.puedeIntercambiarTodoElDeber);
+  const [modo, setModo] = useState<"todo" | "criterios">(
+    puedeTodo ? "todo" : "criterios",
+  );
+
+  const misPendientes = (miDeber.criteriosDetalle ?? []).filter(
+    (c) => !c.completado,
+  );
+  const susPendientes = (hermano.deberCriteriosDetalle ?? []).filter(
+    (c) => !c.completado,
+  );
+
+  const [misSeleccionados, setMisSeleccionados] = useState<string[]>(
+    misPendientes.map((c) => c.id),
+  );
+  const [susSeleccionados, setSusSeleccionados] = useState<string[]>(
+    susPendientes.map((c) => c.id),
+  );
+
+  const toggleMio = (id: string) => {
+    setMisSeleccionados((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  const toggleSuyo = (id: string) => {
+    setSusSeleccionados((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  const puedeEnviar =
+    modo === "todo"
+      ? puedeTodo
+      : misSeleccionados.length > 0 && susSeleccionados.length > 0;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="animate-fade-in absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
+
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="animate-pop-lg relative z-10 max-h-[90dvh] w-full max-w-[420px] overflow-y-auto rounded-[26px] bg-crema-card p-6 outline-none"
+        style={{ boxShadow: "0 10px 40px -10px rgba(60,40,15,.25)" }}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Cerrar"
+          className="absolute right-4 top-4 flex size-8 items-center justify-center rounded-full bg-[#f0e6d5] text-[14px] text-[#9a8c7c]"
+        >
+          ✕
+        </button>
+
+        <div className="flex items-center gap-3">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-[#fbd9c4] text-[24px]">
+            🔄
+          </span>
+          <div>
+            <p className="font-display text-[20px] font-extrabold leading-tight">
+              Intercambiar con {hermano.nombre}
+            </p>
+            <p className="text-[12px] font-semibold text-[#9a8c7c]">
+              Ambos ganan sus +10 pts normales al cumplir
+            </p>
+          </div>
+        </div>
+
+        {/* Selector de modo: Todo el deber vs Por criterios */}
+        <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl bg-[#f0e6d5] p-1">
+          <button
+            type="button"
+            disabled={!puedeTodo}
+            onClick={() => setModo("todo")}
+            className={`rounded-xl py-2 text-[12px] font-extrabold transition-all ${
+              modo === "todo"
+                ? "bg-white text-tinta shadow-sm"
+                : "text-[#8e7e6e] disabled:opacity-40"
+            }`}
+          >
+            Todo el deber
+          </button>
+          <button
+            type="button"
+            onClick={() => setModo("criterios")}
+            className={`rounded-xl py-2 text-[12px] font-extrabold transition-all ${
+              modo === "criterios"
+                ? "bg-white text-tinta shadow-sm"
+                : "text-[#8e7e6e]"
+            }`}
+          >
+            Por criterios
+          </button>
+        </div>
+
+        {modo === "todo" ? (
+          <div className="mt-4 rounded-2xl border border-[#efe1c6] bg-[#faf5eb] p-4 text-[13px] font-medium text-[#5c4e41]">
+            <p>
+              Le propones a <strong>{hermano.nombre}</strong> cambiar el deber
+              completo solo por hoy:
+            </p>
+            <ul className="mt-2.5 space-y-1.5 font-bold text-tinta">
+              <li>
+                • Tú harás: {hermano.emoji} {hermano.deberNombre} (+10 pts)
+              </li>
+              <li>
+                • {hermano.nombre} hará: {miDeber.icono} {miDeber.nombre} (+10 pts)
+              </li>
+            </ul>
+          </div>
+        ) : (
+          <div className="mt-4 space-y-4">
+            <div>
+              <p className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-[#b19a80]">
+                1. ¿Qué criterio(s) tuyos ({miDeber.nombre}) hará {hermano.nombre}?
+              </p>
+              <ul className="mt-1.5 space-y-1.5">
+                {misPendientes.map((c) => {
+                  const sel = misSeleccionados.includes(c.id);
+                  return (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        onClick={() => toggleMio(c.id)}
+                        className={`flex w-full items-center gap-2.5 rounded-xl border p-2.5 text-left text-[13px] font-semibold transition-all ${
+                          sel
+                            ? "border-[#e2733f] bg-[#fff4ec] text-tinta"
+                            : "border-[#dccdb4] bg-[#faf5eb] text-[#7c6b58] opacity-70"
+                        }`}
+                      >
+                        <span
+                          className={`flex size-[18px] flex-shrink-0 items-center justify-center rounded text-[11px] font-bold ${
+                            sel
+                              ? "bg-terracota text-white"
+                              : "border border-[#cbb89d] bg-white text-transparent"
+                          }`}
+                        >
+                          ✓
+                        </span>
+                        <span className="flex-1 leading-snug">{c.descripcion}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+
+            <div>
+              <p className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-[#b19a80]">
+                2. ¿Qué criterio(s) de {hermano.nombre} ({hermano.deberNombre}) harás tú?
+              </p>
+              <ul className="mt-1.5 space-y-1.5">
+                {susPendientes.map((c) => {
+                  const sel = susSeleccionados.includes(c.id);
+                  return (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        onClick={() => toggleSuyo(c.id)}
+                        className={`flex w-full items-center gap-2.5 rounded-xl border p-2.5 text-left text-[13px] font-semibold transition-all ${
+                          sel
+                            ? "border-[#e2733f] bg-[#fff4ec] text-tinta"
+                            : "border-[#dccdb4] bg-[#faf5eb] text-[#7c6b58] opacity-70"
+                        }`}
+                      >
+                        <span
+                          className={`flex size-[18px] flex-shrink-0 items-center justify-center rounded text-[11px] font-bold ${
+                            sel
+                              ? "bg-terracota text-white"
+                              : "border border-[#cbb89d] bg-white text-transparent"
+                          }`}
+                        >
+                          ✓
+                        </span>
+                        <span className="flex-1 leading-snug">{c.descripcion}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+
+            <p className="rounded-xl bg-[#f4ecdd] p-2.5 text-[11.5px] font-semibold text-[#7a6448] leading-snug">
+              💡 <strong>Equivalencia justa:</strong> Al aceptar, estos criterios se intercambian en sus listas de hoy. Cuando cada uno complete su lista, ambos ganan sus <strong>+10 pts exactos</strong>.
+            </p>
+          </div>
+        )}
+
+        <button
+          type="button"
+          disabled={!puedeEnviar || isSubmitting}
+          onClick={() =>
+            modo === "todo"
+              ? onConfirmar(null, null)
+              : onConfirmar(misSeleccionados, susSeleccionados)
+          }
+          className="mt-5 flex w-full items-center justify-center gap-2 rounded-[16px] p-[15px] font-display text-[16px] font-bold text-white transition-all disabled:opacity-50"
+          style={{
+            background: "linear-gradient(180deg,#E2733F,#D2602F)",
+            boxShadow: "0 14px 26px -10px rgba(210,96,47,.75)",
+          }}
+        >
+          {isSubmitting ? "Enviando..." : `Enviar petición a ${hermano.nombre}`}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1107,7 +1396,6 @@ function DetalleDeberModal({
   const [nota, setNota] = useState("");
   const [isUploading, setIsUploading] = useState(false);
 
-  // Para modo "cubrir": criterios disponibles que el usuario marca para cubrir
   const disponiblesIds = criteriosDetalle
     .filter((c) => !c.completado)
     .map((c) => c.id);
@@ -1180,9 +1468,8 @@ function DetalleDeberModal({
     dialogRef.current?.focus();
   }, []);
 
-  // Cálculo proporcional de puntos al cubrir
   const totalCriterios = criteriosDetalle.length;
-  const totalPuntosCobertura = puntos + bonoAyuda; // ej. 10 + 5 = 15
+  const totalPuntosCobertura = puntos + bonoAyuda;
   const puntosCalculadosCubrir =
     totalCriterios > 0
       ? Math.round(
@@ -1205,7 +1492,7 @@ function DetalleDeberModal({
   let labelBoton = "Confirmar";
   if (tipo === "cubrir") {
     labelBoton =
-       puntosCalculadosCubrir > 0
+      puntosCalculadosCubrir > 0
         ? `Confirmar cobertura (+${puntosCalculadosCubrir} pts)`
         : "Selecciona al menos 1 criterio";
   }
@@ -1252,7 +1539,6 @@ function DetalleDeberModal({
         </button>
 
         <div className="p-6 pt-6">
-          {/* Encabezado del deber */}
           <div className="flex items-center gap-3.5">
             <span
               aria-hidden="true"
@@ -1277,7 +1563,6 @@ function DetalleDeberModal({
             </div>
           </div>
 
-          {/* Criterios de aceptación */}
           {tipo === "cubrir" && criteriosDetalle.length > 0 ? (
             <div className="mt-5">
               <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#b19a80]">
@@ -1372,7 +1657,6 @@ function DetalleDeberModal({
             )
           )}
 
-          {/* Subir foto (solo para extras/reclamables que la pidan) */}
           {requiereFoto && (
             <div className="mt-5">
               <input
@@ -1415,7 +1699,6 @@ function DetalleDeberModal({
             </div>
           )}
 
-          {/* Campo de nota / justificación */}
           <div className="mt-5">
             <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#b19a80]">
               {tipo === "cubrir"
@@ -1435,7 +1718,6 @@ function DetalleDeberModal({
             />
           </div>
 
-          {/* Botón de confirmación */}
           <button
             type="button"
             onClick={

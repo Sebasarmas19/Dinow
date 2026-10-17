@@ -295,6 +295,9 @@ export const solicitudesIntercambio = pgTable("solicitudes_intercambio", {
   deberDestinatarioId: uuid("deber_destinatario_id")
     .notNull()
     .references(() => deberes.id, { onDelete: "cascade" }),
+  // Null = intercambio de todo el deber; array = intercambio de criterios específicos
+  criteriosSolicitanteIds: text("criterios_solicitante_ids").array(),
+  criteriosDestinatarioIds: text("criterios_destinatario_ids").array(),
   estado: text("estado", {
     enum: ["pendiente", "aceptada", "rechazada", "cancelada"],
   })

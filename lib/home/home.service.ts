@@ -73,22 +73,42 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
   );
 
   // 4. Obtener asignaciones de HOY con sus criterios ordenados
-  const asignacionesHoy = await db
-    .select({
-      asignacion: asignaciones,
-      deber: deberes,
-      criterio: criteriosDeber,
-    })
-    .from(asignaciones)
-    .innerJoin(deberes, eq(asignaciones.deberId, deberes.id))
-    .leftJoin(criteriosDeber, eq(criteriosDeber.deberId, deberes.id))
-    .where(
-      and(
-        eq(asignaciones.hogarId, hogarActual.id),
-        eq(asignaciones.fecha, fechaHoyStr),
-        eq(deberes.activo, true),
+  const [asignacionesHoy, solicitudesHoy, registrosHoy] = await Promise.all([
+    db
+      .select({
+        asignacion: asignaciones,
+        deber: deberes,
+        criterio: criteriosDeber,
+      })
+      .from(asignaciones)
+      .innerJoin(deberes, eq(asignaciones.deberId, deberes.id))
+      .leftJoin(criteriosDeber, eq(criteriosDeber.deberId, deberes.id))
+      .where(
+        and(
+          eq(asignaciones.hogarId, hogarActual.id),
+          eq(asignaciones.fecha, fechaHoyStr),
+          eq(deberes.activo, true),
+        ),
       ),
-    );
+    db
+      .select()
+      .from(solicitudesIntercambio)
+      .where(
+        and(
+          eq(solicitudesIntercambio.hogarId, hogarActual.id),
+          eq(solicitudesIntercambio.fecha, fechaHoyStr),
+        ),
+      ),
+    db
+      .select()
+      .from(registros)
+      .where(
+        and(
+          eq(registros.hogarId, hogarActual.id),
+          eq(registros.fecha, fechaHoyStr),
+        ),
+      ),
+  ]);
 
   // Agrupar criterios con ID y orden por asignación
   const deberesAgrupados = new Map<
@@ -99,6 +119,8 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
       criterios: { id: string; descripcion: string; orden: number }[];
     }
   >();
+
+  const mapaTodosCriterios = new Map<string, { id: string; descripcion: string; deberId: string; orden: number }>();
 
   for (const fila of asignacionesHoy) {
     const key = fila.asignacion.id;
@@ -115,24 +137,22 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
         descripcion: fila.criterio.descripcion,
         orden: fila.criterio.orden,
       });
+      mapaTodosCriterios.set(fila.criterio.id, {
+        id: fila.criterio.id,
+        descripcion: fila.criterio.descripcion,
+        deberId: fila.deber.id,
+        orden: fila.criterio.orden,
+      });
     }
   }
 
-  // Ordenar los criterios de cada deber
   for (const item of deberesAgrupados.values()) {
     item.criterios.sort((a, b) => a.orden - b.orden);
   }
 
-  // 5. Obtener los registros de hoy
-  const registrosHoy = await db
-    .select()
-    .from(registros)
-    .where(
-      and(
-        eq(registros.hogarId, hogarActual.id),
-        eq(registros.fecha, fechaHoyStr),
-      ),
-    );
+  const intercambiosAceptadosHoy = solicitudesHoy.filter(
+    (s) => s.estado === "aceptada",
+  );
 
   const extrasReclamadosPorMi = new Set(
     registrosHoy
@@ -140,12 +160,93 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
       .map((r) => r.deberId),
   );
 
-  // Helper para calcular el estado detallado de cada criterio de un deber hoy
+  // Calcula la lista efectiva de criterios de un participante para su deber hoy (aplicando intercambios aceptados)
+  function obtenerCriteriosEfectivosLocal(
+    deberId: string,
+    participanteId: string,
+    criteriosOriginales: { id: string; descripcion: string; orden: number }[],
+  ) {
+    const cedidosMap = new Map<string, string>();
+    const recibidos: {
+      id: string;
+      descripcion: string;
+      esIntercambiado: boolean;
+      intercambiadoConNombre: string;
+    }[] = [];
+
+    for (const sol of intercambiosAceptadosHoy) {
+      if (!sol.criteriosSolicitanteIds || !sol.criteriosDestinatarioIds) continue;
+
+      if (
+        sol.solicitanteId === participanteId &&
+        sol.deberSolicitanteId === deberId
+      ) {
+        const otroNombre = mapaNombres.get(sol.destinatarioId) || "Hermano";
+        sol.criteriosSolicitanteIds.forEach((id) => cedidosMap.set(id, otroNombre));
+        for (const id of sol.criteriosDestinatarioIds) {
+          const c = mapaTodosCriterios.get(id);
+          if (c) {
+            recibidos.push({
+              id: c.id,
+              descripcion: c.descripcion,
+              esIntercambiado: true,
+              intercambiadoConNombre: otroNombre,
+            });
+          }
+        }
+      } else if (
+        sol.destinatarioId === participanteId &&
+        sol.deberDestinatarioId === deberId
+      ) {
+        const otroNombre = mapaNombres.get(sol.solicitanteId) || "Hermano";
+        sol.criteriosDestinatarioIds.forEach((id) => cedidosMap.set(id, otroNombre));
+        for (const id of sol.criteriosSolicitanteIds) {
+          const c = mapaTodosCriterios.get(id);
+          if (c) {
+            recibidos.push({
+              id: c.id,
+              descripcion: c.descripcion,
+              esIntercambiado: true,
+              intercambiadoConNombre: otroNombre,
+            });
+          }
+        }
+      }
+    }
+
+    const efectivos: {
+      id: string;
+      descripcion: string;
+      esIntercambiado?: boolean;
+      intercambiadoConNombre?: string;
+    }[] = [];
+
+    for (const c of criteriosOriginales) {
+      if (!cedidosMap.has(c.id)) {
+        efectivos.push({ id: c.id, descripcion: c.descripcion });
+      }
+    }
+    for (const r of recibidos) {
+      if (!efectivos.some((e) => e.id === r.id)) {
+        efectivos.push(r);
+      }
+    }
+
+    return efectivos;
+  }
+
+  // Helper para calcular el estado detallado de cada criterio efectivo de un deber hoy
   function evaluarEstadoDeber(
     deberObj: typeof deberes.$inferSelect,
     duenoId: string,
-    criteriosRaw: { id: string; descripcion: string }[],
+    criteriosOriginales: { id: string; descripcion: string; orden: number }[],
   ) {
+    const criteriosRaw = obtenerCriteriosEfectivosLocal(
+      deberObj.id,
+      duenoId,
+      criteriosOriginales,
+    );
+
     const regsDeber = registrosHoy.filter(
       (r) =>
         r.deberId === deberObj.id &&
@@ -174,6 +275,8 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
           ? mapaNombres.get(completadoPorId) || "Alguien"
           : undefined,
         esPropio,
+        esIntercambiado: c.esIntercambiado,
+        intercambiadoConNombre: c.intercambiadoConNombre,
       };
     });
 
@@ -243,7 +346,6 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
     criterios: { id: string; descripcion: string; orden: number }[];
   }[] = [];
 
-  // ¿Mi deber principal tiene algún avance hoy? (para saber si puedo pedir intercambio)
   const miAsignacionRotativa = Array.from(deberesAgrupados.values()).find(
     (a) =>
       a.asignacion.participanteId === yo.id &&
@@ -258,8 +360,9 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
       )
     : null;
 
-  // ¿Yo ya cumplí al 100% mi propio deber hoy? (para saber si mis coberturas ya dan bono o están en espera)
-  const yoCumpliTodoLoMio = miEvaluacion ? miEvaluacion.cumplidoAlCien && miEvaluacion.propiosCount > 0 : true;
+  const yoCumpliTodoLoMio = miEvaluacion
+    ? miEvaluacion.cumplidoAlCien && miEvaluacion.propiosCount > 0
+    : true;
 
   // 6. Construir lista de hermanos y extraer mis deberes
   for (const part of participantesActivos) {
@@ -289,7 +392,6 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
           (r) => r.estado === "cubrio_a_otro" && r.cubiertoA === part.id,
         );
 
-        // Solo mostramos la pantalla completa "¡Te cubrieron!" si un hermano cubrió el 100% y el dueño hizo 0
         const cubiertoTotalmentePorOtro =
           ev.cumplidoAlCien && ev.propiosCount === 0 && itemCobertura;
 
@@ -299,7 +401,7 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
           icono: item.deber.icono || "✨",
           puntos: Number(item.deber.puntos),
           puntosGanadosHoy: ev.puntosGanadosDueno,
-          criterios: item.criterios.map((c) => c.descripcion),
+          criterios: ev.criteriosDetalle.map((c) => c.descripcion),
           criteriosDetalle: ev.criteriosDetalle,
           cumplido: ev.cumplidoAlCien,
           cubiertoPor: cubiertoTotalmentePorOtro
@@ -326,7 +428,6 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
 
     const estilo = estilosHermanos[part.nombre] || estilosHermanos["Sebastián"];
 
-    // Verificar si YO cubrí total o parcialmente a este hermano hoy
     const miCoberturaAEl = evalPrincipal?.regsDeber.find(
       (r) => r.estado === "cubrio_a_otro" && r.participanteId === yo.id,
     );
@@ -349,9 +450,9 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
       const denom = evalPrincipal.totalCriterios || 1;
       coberturaPuntosGanados =
         Math.round(
-          ((Number(asignacionPrincipal.deber.puntos) + bonoAyudaNum) *
+          (((Number(asignacionPrincipal.deber.puntos) + bonoAyudaNum) *
             kCubiertos) /
-            denom *
+            denom) *
             100,
         ) / 100;
       coberturaStatus = yoCumpliTodoLoMio ? "bonus" : "nobonus";
@@ -364,10 +465,16 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
       coberturaStatus = "cubierto_por_otro";
     }
 
+    // Se puede intercambiar siempre que a AMBOS les quede al menos 1 criterio pendiente hoy
     const puedeIntercambiar =
       !esYo &&
       Boolean(miAsignacionRotativa) &&
       Boolean(asignacionPrincipal) &&
+      !miEvaluacion?.cumplidoAlCien &&
+      !evalPrincipal?.cumplidoAlCien;
+
+    const puedeIntercambiarTodoElDeber =
+      puedeIntercambiar &&
       !miEvaluacion?.tieneAlgunAvance &&
       !evalPrincipal?.tieneAlgunAvance;
 
@@ -387,36 +494,25 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
         ? Number(asignacionPrincipal.deber.puntos)
         : 0,
       deberCriterios:
-        asignacionPrincipal?.criterios.map((c) => c.descripcion) || [],
+        evalPrincipal?.criteriosDetalle.map((c) => c.descripcion) || [],
       deberCriteriosDetalle: evalPrincipal?.criteriosDetalle || [],
       criteriosCompletados: evalPrincipal?.completadosCount ?? 0,
       criteriosTotales: evalPrincipal?.totalCriterios ?? 0,
       puedeIntercambiar,
+      puedeIntercambiarTodoElDeber,
       cardStyle: esYo ? estilosHermanos["Samuel"].card : estilo.card,
       ringStyle: esYo ? estilosHermanos["Samuel"].ring : estilo.ring,
     });
   }
 
   // 6.5. Obtener solicitudes de intercambio pendientes de hoy que me involucren
-  const solicitudesRaw = await db
-    .select()
-    .from(solicitudesIntercambio)
-    .where(
-      and(
-        eq(solicitudesIntercambio.hogarId, hogarActual.id),
-        eq(solicitudesIntercambio.fecha, fechaHoyStr),
-        eq(solicitudesIntercambio.estado, "pendiente"),
-        or(
-          eq(solicitudesIntercambio.solicitanteId, yo.id),
-          eq(solicitudesIntercambio.destinatarioId, yo.id),
-        ),
-      ),
-    );
+  const solicitudesPendientesRaw = solicitudesHoy.filter(
+    (s) =>
+      s.estado === "pendiente" &&
+      (s.solicitanteId === yo.id || s.destinatarioId === yo.id),
+  );
 
-  const todosDeberesMap = new Map<
-    string,
-    { nombre: string; icono: string }
-  >();
+  const todosDeberesMap = new Map<string, { nombre: string; icono: string }>();
   for (const item of deberesAgrupados.values()) {
     todosDeberesMap.set(item.deber.id, {
       nombre: item.deber.nombre,
@@ -424,10 +520,21 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
     });
   }
 
-  const intercambiosPendientes: SolicitudIntercambioUI[] = solicitudesRaw.map(
-    (s) => {
+  const intercambiosPendientes: SolicitudIntercambioUI[] =
+    solicitudesPendientesRaw.map((s) => {
       const dSol = todosDeberesMap.get(s.deberSolicitanteId);
       const dDest = todosDeberesMap.get(s.deberDestinatarioId);
+      const critSolLabels = s.criteriosSolicitanteIds
+        ? s.criteriosSolicitanteIds
+            .map((id) => mapaTodosCriterios.get(id)?.descripcion)
+            .filter((x): x is string => Boolean(x))
+        : undefined;
+      const critDestLabels = s.criteriosDestinatarioIds
+        ? s.criteriosDestinatarioIds
+            .map((id) => mapaTodosCriterios.get(id)?.descripcion)
+            .filter((x): x is string => Boolean(x))
+        : undefined;
+
       return {
         id: s.id,
         solicitanteId: s.solicitanteId,
@@ -438,10 +545,11 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
         deberSolicitanteIcono: dSol?.icono || "✨",
         deberDestinatarioNombre: dDest?.nombre || "Deber",
         deberDestinatarioIcono: dDest?.icono || "✨",
+        criteriosSolicitanteLabels: critSolLabels,
+        criteriosDestinatarioLabels: critDestLabels,
         esRecibida: s.destinatarioId === yo.id,
       };
-    },
-  );
+    });
 
   // 7. Obtener extras de la semana (reclamables) disponibles HOY
   const deberesExtras = await db

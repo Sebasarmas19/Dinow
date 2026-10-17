@@ -1,5 +1,6 @@
 import { obtenerCriteriosDeDeber, obtenerDeber } from "@/lib/deberes/deberes.repo";
 import { obtenerHogarActual } from "@/lib/hogar/hogar.service";
+import { obtenerCriteriosEfectivosDeDeber } from "@/lib/intercambio/intercambio.service";
 import {
   otorgarBonoAyuda,
   otorgarCumplimiento,
@@ -37,8 +38,9 @@ import {
 
 /**
  * Verifica si el participante ya completó el 100% de sus propios deberes
- * rotativos del día (incluyendo todos los criterios que no hayan sido cubiertos
- * por un hermano). Requisito para que su bono_ayuda se desbloquee.
+ * rotativos del día (incluyendo todos los criterios efectivos tras posibles
+ * intercambios que no hayan sido cubiertos por un hermano). Requisito para que
+ * su bono_ayuda se desbloquee.
  */
 export async function cumplioDeberPropioDelDia(
   participanteId: string,
@@ -54,8 +56,13 @@ export async function cumplioDeberPropioDelDia(
     const deber = await obtenerDeber(asig.deberId);
     if (!deber || !deber.activo || deber.esPersonal) continue;
 
-    const [criterios, registrosHoy] = await Promise.all([
-      obtenerCriteriosDeDeber(deber.id),
+    const [{ efectivos: criterios }, registrosHoy] = await Promise.all([
+      obtenerCriteriosEfectivosDeDeber(
+        deber.hogarId,
+        fechaStr,
+        deber.id,
+        participanteId,
+      ),
       listarRegistrosDeDeberEnFecha(deber.id, fechaStr),
     ]);
 
@@ -64,11 +71,9 @@ export async function cumplioDeberPropioDelDia(
         r.estado === "cumplido_propio" && r.participanteId === participanteId,
     );
 
-    // Debe haber participado en su propio deber (al menos un criterio propio o todo el deber si no tiene criterios)
     if (!miRegistroPropio) return false;
 
     if (criterios.length > 0 && miRegistroPropio.criteriosIds !== null) {
-      // Todos los criterios del deber deben estar cubiertos entre él y posibles ayudas
       const criteriosCompletados = new Set<string>();
       for (const r of registrosHoy) {
         if (r.estado !== "cumplido_propio" && r.estado !== "cubrio_a_otro") continue;
@@ -88,7 +93,8 @@ export async function cumplioDeberPropioDelDia(
 
 /**
  * Marca el deber propio (rotativo, asignado hoy) como cumplido, ya sea completo
- * o seleccionando criterios específicos de aceptación.
+ * o seleccionando criterios específicos de aceptación (incluyendo criterios
+ * recibidos en un intercambio con otro hermano).
  */
 export async function marcarCumplido(input: {
   deberId: string;
@@ -115,8 +121,13 @@ export async function marcarCumplido(input: {
   );
   if (!asignacion) throw new Error("Este deber no te toca hoy.");
 
-  const [criterios, registrosDeberHoy] = await Promise.all([
-    obtenerCriteriosDeDeber(deber.id),
+  const [{ efectivos: criterios }, registrosDeberHoy] = await Promise.all([
+    obtenerCriteriosEfectivosDeDeber(
+      deber.hogarId,
+      fechaStr,
+      deber.id,
+      input.participanteId,
+    ),
     listarRegistrosDeDeberEnFecha(deber.id, fechaStr),
   ]);
 

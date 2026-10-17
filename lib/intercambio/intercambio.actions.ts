@@ -18,6 +18,8 @@ import {
 export async function solicitarIntercambioAction(
   solicitanteId: string,
   destinatarioId: string,
+  criteriosSolicitanteIds?: string[] | null,
+  criteriosDestinatarioIds?: string[] | null,
 ): Promise<Resultado<SolicitudIntercambio>> {
   try {
     const sesion = await verificarSesionActual();
@@ -31,6 +33,8 @@ export async function solicitarIntercambioAction(
     const solicitud = await solicitarIntercambio({
       solicitanteId,
       destinatarioId,
+      criteriosSolicitanteIds,
+      criteriosDestinatarioIds,
     });
     revalidatePath("/", "layout");
     return exito(solicitud);
