@@ -1079,12 +1079,8 @@ function ModalIntercambio({
     (c) => !c.completado,
   );
 
-  const [misSeleccionados, setMisSeleccionados] = useState<string[]>(
-    misPendientes.map((c) => c.id),
-  );
-  const [susSeleccionados, setSusSeleccionados] = useState<string[]>(
-    susPendientes.map((c) => c.id),
-  );
+  const [misSeleccionados, setMisSeleccionados] = useState<string[]>([]);
+  const [susSeleccionados, setSusSeleccionados] = useState<string[]>([]);
 
   const toggleMio = (id: string) => {
     setMisSeleccionados((prev) =>

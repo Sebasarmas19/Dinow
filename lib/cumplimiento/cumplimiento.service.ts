@@ -298,16 +298,22 @@ export async function cubrirDeber(input: {
     throw new Error("Ese deber no le tocaba a esa persona hoy.");
   }
 
-  const [criterios, registrosDeberHoy, yaCubiertoPorMi] = await Promise.all([
-    obtenerCriteriosDeDeber(deber.id),
-    listarRegistrosDeDeberEnFecha(deber.id, fechaStr),
-    buscarRegistroCobertura(
-      deber.id,
-      input.participanteId,
-      input.cubiertoA,
-      fechaStr,
-    ),
-  ]);
+  const [{ efectivos: criterios }, registrosDeberHoy, yaCubiertoPorMi] =
+    await Promise.all([
+      obtenerCriteriosEfectivosDeDeber(
+        deber.hogarId,
+        fechaStr,
+        deber.id,
+        input.cubiertoA,
+      ),
+      listarRegistrosDeDeberEnFecha(deber.id, fechaStr),
+      buscarRegistroCobertura(
+        deber.id,
+        input.participanteId,
+        input.cubiertoA,
+        fechaStr,
+      ),
+    ]);
 
   if (criterios.length === 0) {
     if (yaCubiertoPorMi) throw new Error("Ya registraste esta cobertura hoy.");
@@ -456,11 +462,16 @@ async function intentarOtorgarBono(cobertura: Registro): Promise<void> {
   );
   if (!hizoLoSuyo) return; // queda pendiente hasta que complete todos los criterios de su propio deber
 
-  const [deber, criterios] = await Promise.all([
-    obtenerDeber(cobertura.deberId),
-    obtenerCriteriosDeDeber(cobertura.deberId),
-  ]);
+  const deber = await obtenerDeber(cobertura.deberId);
   if (!deber) return;
+  const { efectivos: criterios } = cobertura.cubiertoA
+    ? await obtenerCriteriosEfectivosDeDeber(
+        deber.hogarId,
+        cobertura.fecha,
+        deber.id,
+        cobertura.cubiertoA,
+      )
+    : { efectivos: await obtenerCriteriosDeDeber(cobertura.deberId) };
 
   const hogar = await obtenerHogarActual();
   const bono = hogar ? Number(hogar.bonoAyuda) : 0;
