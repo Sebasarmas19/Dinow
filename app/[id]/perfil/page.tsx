@@ -137,6 +137,7 @@ export default async function PerfilPage({ params }: Props) {
         <div className="grid grid-cols-2 gap-3">
           {[
             { label: "General", val: posiciones.general, emoji: "🏆" },
+            { label: "Confiable", val: posiciones.confiable, emoji: "🎯" },
             { label: "Solidario", val: posiciones.solidario, emoji: "🤝" },
             { label: "Responsable", val: posiciones.responsable, emoji: "🌟" },
           ].map((item) => (

@@ -29,7 +29,7 @@ import {
  * Todo es idempotente: volver a evaluar no duplica medallas ni títulos.
  */
 
-const RANKINGS = ["general", "solidario", "responsable"] as const;
+const RANKINGS = ["general", "confiable", "solidario", "responsable"] as const;
 
 // ── Estadísticas ─────────────────────────────────────────────────────────────
 

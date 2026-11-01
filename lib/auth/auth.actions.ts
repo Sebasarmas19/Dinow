@@ -35,7 +35,7 @@ export async function loginAdminAction(formData: FormData): Promise<Resultado<vo
     const esValido = await loginAdmin(clave);
     if (!esValido) throw new Error("Contraseña incorrecta");
     
-    revalidatePath("/", "layout");
+    revalidatePath("/admin", "layout");
     return exito(undefined);
   } catch (e) {
     return fallo(mensajeDeError(e));
@@ -52,7 +52,7 @@ export async function loginParticipanteAction(formData: FormData): Promise<Resul
     const esValido = await loginParticipante(id, pin);
     if (!esValido) throw new Error("PIN incorrecto");
     
-    revalidatePath("/", "layout");
+    revalidatePath(`/${id}`, "layout");
     return exito(undefined);
   } catch (e) {
     return fallo(mensajeDeError(e));

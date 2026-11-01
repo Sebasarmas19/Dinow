@@ -2,16 +2,17 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { calcularRankings } from "@/lib/rankings/rankings.service";
 import { obtenerFechaDeNegocio, formatearFechaISO } from "@/lib/shared/date";
+import { generarWrappedMensual } from "@/lib/wrapped/wrapped.service";
 import { RankingClient } from "./ranking-client";
 
 type Props = {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ mes?: string }>;
+  searchParams: Promise<{ mes?: string; wrapped?: string }>;
 };
 
 export default async function RankingPage({ params, searchParams }: Props) {
   const { id } = await params;
-  const { mes } = await searchParams;
+  const { mes, wrapped } = await searchParams;
 
   const currentBusinessDate = obtenerFechaDeNegocio();
   const currentMonthStr = formatearFechaISO(currentBusinessDate).slice(0, 7);
@@ -30,9 +31,6 @@ export default async function RankingPage({ params, searchParams }: Props) {
     redirect(`/${id}/ranking?mes=${currentMonthStr}`);
   }
 
-  // Calculamos los rankings para el mes seleccionado
-  const rankings = await calcularRankings(mesActual);
-
   // Navegación de meses
   let prevYear = year;
   let prevMonth = month - 1;
@@ -49,6 +47,33 @@ export default async function RankingPage({ params, searchParams }: Props) {
     nextYear += 1;
   }
   const nextMesStr = `${nextYear}-${String(nextMonth).padStart(2, "0")}`;
+
+  // Calculamos el resumen interactivo (Wrapped) y extraemos de él los 4 rankings del mes
+  // sin duplicar consultas a la base de datos.
+  // Si el usuario entra sin especificar ?mes= en los primeros días del mes nuevo (cuando aún hay 0 deberes cumplidos)
+  // y el mes anterior cerrado sí tiene actividad, destacamos automáticamente el Wrapped del mes recién cerrado.
+  const [currentWrappedData, prevWrappedData] = await Promise.all([
+    generarWrappedMensual(mesActual, id),
+    !mes ? generarWrappedMensual(prevMesStr, id) : Promise.resolve(null),
+  ]);
+
+  const rankings = {
+    mes: mesActual,
+    general: currentWrappedData.titulosOficiales.general.tablaCompleta,
+    confiable: currentWrappedData.titulosOficiales.confiable.tablaCompleta,
+    solidario: currentWrappedData.titulosOficiales.solidario.tablaCompleta,
+    responsable: currentWrappedData.titulosOficiales.responsable.tablaCompleta,
+  };
+
+  let wrappedData = currentWrappedData;
+  if (
+    !mes &&
+    currentWrappedData.pulsoHogar.totalCumplimientos === 0 &&
+    prevWrappedData &&
+    prevWrappedData.pulsoHogar.totalCumplimientos > 0
+  ) {
+    wrappedData = prevWrappedData;
+  }
 
   const MESES = [
     "Enero",
@@ -103,7 +128,12 @@ export default async function RankingPage({ params, searchParams }: Props) {
         </div>
       </div>
 
-      <RankingClient rankings={rankings} />
+      <RankingClient
+        rankings={rankings}
+        wrappedData={wrappedData}
+        usuarioId={id}
+        autoOpenWrapped={wrapped === "1"}
+      />
     </main>
   );
 }

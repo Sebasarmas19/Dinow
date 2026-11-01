@@ -2,15 +2,26 @@
 
 import { useState } from "react";
 import type { Rankings, FilaRanking } from "@/lib/rankings/rankings.service";
+import type { WrappedMensualData } from "@/lib/wrapped/wrapped.service";
+import { DeberesWrapped } from "./deberes-wrapped";
 
 type Props = {
   rankings: Rankings;
+  wrappedData: WrappedMensualData;
+  usuarioId: string;
+  autoOpenWrapped?: boolean;
 };
 
-export function RankingClient({ rankings }: Props) {
+export function RankingClient({
+  rankings,
+  wrappedData,
+  usuarioId,
+  autoOpenWrapped = false,
+}: Props) {
   const [tab, setTab] = useState<
     "general" | "confiable" | "solidario" | "responsable"
   >("general");
+  const [showWrapped, setShowWrapped] = useState(autoOpenWrapped);
 
   const rankData = rankings[tab] || [];
 
@@ -29,6 +40,53 @@ export function RankingClient({ rankings }: Props) {
 
   return (
     <div className="flex flex-col gap-6 animate-rise-delay-1">
+      {showWrapped && (
+        <DeberesWrapped
+          data={wrappedData}
+          onClose={() => setShowWrapped(false)}
+          closeHref={`/${usuarioId}/ranking?mes=${wrappedData.mes}`}
+        />
+      )}
+
+      {/* Banner Destacado: Deberes Wrapped */}
+      <button
+        type="button"
+        onClick={() => setShowWrapped(true)}
+        className="group relative w-full text-left overflow-hidden rounded-[26px] p-5 text-[#fffdf9] shadow-md border border-[#3d2516] active:scale-[0.985] transition-transform cursor-pointer"
+        style={{
+          background:
+            "radial-gradient(125% 110% at 90% 10%, #59331A 0%, #24160F 62%, #140D09 100%)",
+        }}
+      >
+        <div
+          className="pointer-events-none absolute -top-12 -right-12 size-40 rounded-full opacity-30 blur-2xl"
+          style={{ background: "#E2733F" }}
+        />
+        <div className="relative z-10 flex items-center justify-between gap-4">
+          <div className="flex flex-col gap-1 min-w-0">
+            <span className="text-[#fcebb6] text-[10px] font-extrabold uppercase tracking-[0.2em]">
+              RESUMEN INTERACTIVO · {wrappedData.labelMes}
+            </span>
+            <h2 className="font-display text-[22px] font-extrabold tracking-tight text-white leading-tight">
+              {wrappedData.mesNombre} Wrapped
+            </h2>
+            <p className="text-[12px] text-white/65 font-medium">
+              La historia en movimiento del mes y los 4 títulos oficiales.
+            </p>
+          </div>
+
+          <div className="shrink-0 size-11 rounded-full bg-[#fcebb6] text-[#1f1400] flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
+            <svg
+              className="size-4 translate-x-[1px]"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <polygon points="6 3 20 12 6 21 6 3" />
+            </svg>
+          </div>
+        </div>
+      </button>
+
       {/* Pestañas Interactivas */}
       <div
         role="tablist"

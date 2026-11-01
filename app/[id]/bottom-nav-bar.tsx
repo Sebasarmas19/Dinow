@@ -10,6 +10,10 @@ type Props = {
 export function BottomNavBar({ usuario }: Props) {
   const pathname = usePathname();
 
+  if (pathname?.includes("/wrapped")) {
+    return null;
+  }
+
   // Helper para determinar si el link está activo
   const isActive = (href: string) => {
     // Si es la página de inicio, tiene que coincidir exactamente (con o sin barra al final)
