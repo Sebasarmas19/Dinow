@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useEffect, useState, useTransition } from "react";
 import toast from "react-hot-toast";
 import {
   aprobarTareaVoluntariaAction,
@@ -30,6 +30,15 @@ export function TareasVoluntariasAdminClient({ tareas: tareasIniciales, adminId 
   const [rechazoMap, setRechazoMap] = useState<Record<string, string>>({});
   const [modalFoto, setModalFoto] = useState<string | null>(null);
   const [abriendoRechazoId, setAbriendoRechazoId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!modalFoto) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [modalFoto]);
 
   const pendientes = tareas.filter((t) => t.estado === "pendiente");
   const historial = tareas.filter((t) => t.estado !== "pendiente");
@@ -415,7 +424,7 @@ export function TareasVoluntariasAdminClient({ tareas: tareasIniciales, adminId 
       {/* Modal para ver la foto en grande */}
       {modalFoto && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 animate-in fade-in"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 animate-in fade-in overscroll-none touch-none"
           onClick={() => setModalFoto(null)}
         >
           <div

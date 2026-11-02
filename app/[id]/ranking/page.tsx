@@ -48,14 +48,8 @@ export default async function RankingPage({ params, searchParams }: Props) {
   }
   const nextMesStr = `${nextYear}-${String(nextMonth).padStart(2, "0")}`;
 
-  // Calculamos el resumen interactivo (Wrapped) y extraemos de él los 4 rankings del mes
-  // sin duplicar consultas a la base de datos.
-  // Si el usuario entra sin especificar ?mes= en los primeros días del mes nuevo (cuando aún hay 0 deberes cumplidos)
-  // y el mes anterior cerrado sí tiene actividad, destacamos automáticamente el Wrapped del mes recién cerrado.
-  const [currentWrappedData, prevWrappedData] = await Promise.all([
-    generarWrappedMensual(mesActual, id),
-    !mes ? generarWrappedMensual(prevMesStr, id) : Promise.resolve(null),
-  ]);
+  // Calculamos los rankings del mes consultado a partir de los datos consolidados
+  const currentWrappedData = await generarWrappedMensual(mesActual, id);
 
   const rankings = {
     mes: mesActual,
@@ -65,15 +59,11 @@ export default async function RankingPage({ params, searchParams }: Props) {
     responsable: currentWrappedData.titulosOficiales.responsable.tablaCompleta,
   };
 
-  let wrappedData = currentWrappedData;
-  if (
-    !mes &&
-    currentWrappedData.pulsoHogar.totalCumplimientos === 0 &&
-    prevWrappedData &&
-    prevWrappedData.pulsoHogar.totalCumplimientos > 0
-  ) {
-    wrappedData = prevWrappedData;
-  }
+  // REGLA: El Wrapped interactivo SOLO corresponde a un mes que ya ha terminado (cerrado).
+  // Si el mes consultado es el mes actual en curso (ej: Noviembre) o futuro, NO se muestra la opción de Wrapped
+  // porque el mes aún no ha acabado. Solo se muestra cuando se consulta un mes que ya finalizó (cerrado).
+  const esMesCerrado = mesActual < currentMonthStr;
+  const wrappedData = esMesCerrado ? currentWrappedData : null;
 
   const MESES = [
     "Enero",

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState, useTransition } from "react";
+import React, { useEffect, useRef, useState, useTransition } from "react";
 import toast from "react-hot-toast";
 import { supabase } from "@/lib/db/supabase";
 import { comprimirImagen } from "@/lib/shared/image-compression";
@@ -28,6 +28,19 @@ export function ModalTareaVoluntaria({
   const [isPending, startTransition] = useTransition();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Bloquea el scroll del fondo mientras el modal esté abierto
+  useEffect(() => {
+    if (!isOpen) return;
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -112,14 +125,14 @@ export function ModalTareaVoluntaria({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in overscroll-none touch-none"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label="Proponer Tarea Voluntaria"
     >
       <div
-        className="relative max-w-md w-full rounded-[28px] border border-[#efe1c6] bg-white p-6 shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col gap-5"
+        className="relative max-w-md w-full max-h-[90dvh] overflow-y-auto overscroll-contain rounded-[28px] border border-[#efe1c6] bg-white p-6 shadow-2xl animate-in zoom-in-95 flex flex-col gap-5 touch-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Cabecera */}
