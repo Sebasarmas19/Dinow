@@ -17,6 +17,7 @@ import {
   obtenerFechaDeNegocio,
   sumarDias,
 } from "../shared/date";
+import { obtenerMisTareasVoluntarias } from "../tareas-voluntarias/tareas-voluntarias.service";
 import type {
   CriterioEstado,
   DeberHoy,
@@ -776,6 +777,19 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
       }
     : null;
 
+  const misTareasVoluntariasRaw = await obtenerMisTareasVoluntarias(yo.id);
+  const tareasVoluntarias = misTareasVoluntariasRaw.map((t) => ({
+    id: t.id,
+    titulo: t.titulo,
+    descripcion: t.descripcion,
+    fotoUrl: t.fotoUrl,
+    estado: t.estado as "pendiente" | "aprobada" | "rechazada",
+    puntosSugeridos: t.puntosSugeridos ? Number(t.puntosSugeridos) : null,
+    puntosOtorgados: t.puntosOtorgados ? Number(t.puntosOtorgados) : null,
+    motivoRechazo: t.motivoRechazo,
+    fecha: t.fecha,
+  }));
+
   return {
     miId: yo.id,
     userName: yo.nombre,
@@ -788,5 +802,6 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
     deberManana,
     intercambiosPendientes,
     bonoAyuda: bonoAyudaNum,
+    tareasVoluntarias,
   };
 }

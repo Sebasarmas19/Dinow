@@ -1,17 +1,12 @@
-import { and, asc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db } from "../db";
 import {
-  asignaciones,
   deberes,
   hogar,
   participantes,
   planSemanal as planSemanalTable,
 } from "../db/schema";
-import {
-  formatearFechaISO,
-  obtenerFechaDeNegocio,
-  sumarDias,
-} from "../shared/date";
+import { contarTareasVoluntariasPendientes } from "../tareas-voluntarias/tareas-voluntarias.repo";
 
 /**
  * Datos consolidados para el Dashboard del Admin.
@@ -33,6 +28,7 @@ export type AdminDashboardData = {
   participantes: ParticipanteResumen[];
   planSemanal: PlanSemanalFila[];
   diasLabels: { clave: string; label: string; idx: number }[];
+  tareasVoluntariasPendientes: number;
 };
 
 export async function getAdminDashboardData(): Promise<AdminDashboardData> {
@@ -40,17 +36,20 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   const [hogarActual] = await db.select().from(hogar).limit(1);
   if (!hogarActual) throw new Error("No hay un hogar configurado.");
 
-  // 2. Obtener participantes activos
-  const activos = await db
-    .select({ id: participantes.id, nombre: participantes.nombre })
-    .from(participantes)
-    .where(
-      and(
-        eq(participantes.hogarId, hogarActual.id),
-        eq(participantes.activo, true),
-      ),
-    )
-    .orderBy(asc(participantes.ordenRotacion));
+  // 2. Obtener participantes activos y tareas voluntarias pendientes
+  const [activos, tareasVoluntariasPendientes] = await Promise.all([
+    db
+      .select({ id: participantes.id, nombre: participantes.nombre })
+      .from(participantes)
+      .where(
+        and(
+          eq(participantes.hogarId, hogarActual.id),
+          eq(participantes.activo, true),
+        ),
+      )
+      .orderBy(asc(participantes.ordenRotacion)),
+    contarTareasVoluntariasPendientes(hogarActual.id),
+  ]);
 
   // 3. Obtener la plantilla (plan semanal)
   const plantillaSemana = await db
@@ -64,8 +63,8 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     .where(
       and(
         eq(planSemanalTable.hogarId, hogarActual.id),
-        eq(deberes.activo, true)
-      )
+        eq(deberes.activo, true),
+      ),
     );
 
   // 4. Construir las etiquetas de los 7 días (0 = Domingo)
@@ -88,7 +87,7 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
 
     for (const a of plantillaSemana) {
       if (a.participanteId === p.id) {
-        const diaTarget = diasLabels.find(d => d.idx === a.diaSemana);
+        const diaTarget = diasLabels.find((d) => d.idx === a.diaSemana);
         if (diaTarget) {
           dias[diaTarget.clave].push(a.deberNombre);
         }
@@ -106,5 +105,6 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     participantes: activos,
     planSemanal,
     diasLabels,
+    tareasVoluntariasPendientes,
   };
 }

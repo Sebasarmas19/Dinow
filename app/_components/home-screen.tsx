@@ -17,6 +17,7 @@ import { supabase } from "@/lib/db/supabase";
 import { comprimirImagen } from "@/lib/shared/image-compression";
 import { notificarCambioHogar } from "@/lib/shared/live-sync";
 import toast from "react-hot-toast";
+import { ModalTareaVoluntaria } from "./modal-tarea-voluntaria";
 
 // ── Tipos exportados ────────────────────────────────────────────────────────
 
@@ -99,6 +100,18 @@ export type SolicitudIntercambioUI = {
   esRecibida: boolean;
 };
 
+export type TareaVoluntariaUI = {
+  id: string;
+  titulo: string;
+  descripcion: string;
+  fotoUrl: string | null;
+  estado: "pendiente" | "aprobada" | "rechazada";
+  puntosSugeridos: number | null;
+  puntosOtorgados: number | null;
+  motivoRechazo: string | null;
+  fecha: string;
+};
+
 export type HomeScreenProps = {
   miId: string;
   variant?: HeroVariant;
@@ -112,6 +125,7 @@ export type HomeScreenProps = {
   deberManana?: { nombre: string; icono: string; puntos: number } | null;
   intercambiosPendientes?: SolicitudIntercambioUI[];
   bonoAyuda?: number;
+  tareasVoluntarias?: TareaVoluntariaUI[];
 };
 
 // ── Tipos internos ──────────────────────────────────────────────────────────
@@ -146,6 +160,7 @@ export function HomeScreen({
   deberManana,
   intercambiosPendientes = [],
   bonoAyuda = 5,
+  tareasVoluntarias = [],
 }: HomeScreenProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -155,6 +170,16 @@ export function HomeScreen({
   const [modalIntercambioHermanoIdx, setModalIntercambioHermanoIdx] = useState<
     number | null
   >(null);
+  const [modalVoluntariaAbierto, setModalVoluntariaAbierto] = useState(false);
+  const [misTareasVoluntarias, setMisTareasVoluntarias] = useState<TareaVoluntariaUI[]>(
+    tareasVoluntarias || []
+  );
+
+  useEffect(() => {
+    if (tareasVoluntarias) {
+      setMisTareasVoluntarias(tareasVoluntarias);
+    }
+  }, [tareasVoluntarias]);
 
   const todosMisDeberesCumplidos =
     deberesHoy.length > 0 && deberesHoy.every((d) => d.cumplido);
@@ -586,10 +611,18 @@ export function HomeScreen({
 
         {/* Extras de la semana */}
         <section aria-label="Extras de la semana" className="mt-8">
-          <div className="flex items-baseline justify-between px-0.5 mb-3">
+          <div className="flex items-center justify-between px-0.5 mb-3">
             <h2 className="font-display text-[18px] font-extrabold tracking-[-0.02em]">
               Extras de la semana
             </h2>
+            <button
+              type="button"
+              onClick={() => setModalVoluntariaAbierto(true)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-[#e6b79c] bg-[#fff4ec] px-3 py-1.5 text-[11.5px] font-extrabold text-[#c25a2e] transition-colors hover:bg-[#ffe9db] active:scale-[0.97] shadow-xs"
+            >
+              <span>⭐</span>
+              <span>+ Tarea voluntaria</span>
+            </button>
           </div>
 
           {extras.length === 0 ? (
@@ -648,6 +681,83 @@ export function HomeScreen({
                   );
                 })}
               </ul>
+            </div>
+          )}
+
+          {/* Iniciativas voluntarias reportadas */}
+          {misTareasVoluntarias.length > 0 && (
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-2 px-1">
+                <p className="text-[11.5px] font-extrabold uppercase tracking-wider text-[#a88c5a]">
+                  Tus iniciativas voluntarias
+                </p>
+                <span className="text-[11px] font-bold text-[#b19a80]">
+                  {misTareasVoluntarias.length} registrada{misTareasVoluntarias.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <div className="rounded-[20px] bg-white border border-[#efe1c6] shadow-[0_4px_16px_rgb(0,0,0,0.03)] overflow-hidden">
+                <ul className="flex flex-col divide-y divide-[#efe1c6]">
+                  {misTareasVoluntarias.map((tv) => {
+                    const esPendiente = tv.estado === "pendiente";
+                    const esAprobada = tv.estado === "aprobada";
+                    const esRechazada = tv.estado === "rechazada";
+
+                    return (
+                      <li key={tv.id} className="p-3.5 flex items-start gap-3">
+                        <span className="flex size-9 flex-shrink-0 items-center justify-center rounded-xl bg-[#fff8eb] border border-[#f2e2be] text-lg shadow-xs">
+                          {esAprobada ? "🏆" : esRechazada ? "⚠️" : "⭐"}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <h4 className="text-[13.5px] font-bold text-[#342e29] truncate">
+                              {tv.titulo}
+                            </h4>
+                            {esPendiente && (
+                              <span className="flex-shrink-0 rounded-full bg-[#fef3c7] px-2.5 py-0.5 text-[10.5px] font-extrabold text-[#92400e]">
+                                ⏳ Pendiente
+                              </span>
+                            )}
+                            {esAprobada && (
+                              <span className="flex-shrink-0 rounded-full bg-[#dcfce7] px-2.5 py-0.5 text-[10.5px] font-extrabold text-[#15803d]">
+                                +{tv.puntosOtorgados ?? tv.puntosSugeridos ?? 0} pts
+                              </span>
+                            )}
+                            {esRechazada && (
+                              <span className="flex-shrink-0 rounded-full bg-[#fee2e2] px-2.5 py-0.5 text-[10.5px] font-extrabold text-[#991b1b]">
+                                No aprobada
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11.5px] text-[#7c6b58] mt-0.5 line-clamp-2">
+                            {tv.descripcion}
+                          </p>
+                          {esRechazada && tv.motivoRechazo && (
+                            <p className="text-[11px] text-[#b91c1c] italic mt-1.5 bg-red-50 p-2 rounded-xl border border-red-100">
+                              Nota del admin: {tv.motivoRechazo}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-3 mt-2 text-[10.5px] text-[#a88c5a]">
+                            <span>{tv.fecha}</span>
+                            {tv.puntosSugeridos && esPendiente && (
+                              <span>Sugeriste: {tv.puntosSugeridos} pts</span>
+                            )}
+                            {tv.fotoUrl && (
+                              <a
+                                href={tv.fotoUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-terracota underline font-bold"
+                              >
+                                Ver evidencia 📷
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             </div>
           )}
         </section>
@@ -781,6 +891,17 @@ export function HomeScreen({
           }}
         />
       )}
+
+      {/* Modal para proponer Tarea Voluntaria */}
+      <ModalTareaVoluntaria
+        isOpen={modalVoluntariaAbierto}
+        onClose={() => setModalVoluntariaAbierto(false)}
+        participanteId={miId}
+        onSuccess={(nuevaTarea) => {
+          setMisTareasVoluntarias((prev) => [nuevaTarea, ...prev]);
+          router.refresh();
+        }}
+      />
     </>
   );
 }

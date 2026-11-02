@@ -394,6 +394,37 @@ export const registroAuditoria = pgTable("registro_auditoria", {
 // fotos_motivacionales — fotos que se muestran en recordatorios para motivar.
 // NO son pruebas, son motivacion.
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// tareas_voluntarias — iniciativas espontáneas o tareas adicionales propuestas
+// por los participantes para ganar puntos extra tras validación del admin.
+// ─────────────────────────────────────────────────────────────────────────────
+export const tareasVoluntarias = pgTable("tareas_voluntarias", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  hogarId: uuid("hogar_id")
+    .notNull()
+    .references(() => hogar.id, { onDelete: "cascade" }),
+  participanteId: uuid("participante_id")
+    .notNull()
+    .references(() => participantes.id, { onDelete: "cascade" }),
+  titulo: text("titulo").notNull(),
+  descripcion: text("descripcion").notNull(),
+  fotoUrl: text("foto_url"),
+  puntosSugeridos: numeric("puntos_sugeridos"),
+  puntosOtorgados: numeric("puntos_otorgados"),
+  estado: text("estado", {
+    enum: ["pendiente", "aprobada", "rechazada"],
+  })
+    .notNull()
+    .default("pendiente"),
+  motivoRechazo: text("motivo_rechazo"),
+  revisadoPor: uuid("revisado_por").references(() => participantes.id, {
+    onDelete: "set null",
+  }),
+  fecha: date("fecha").notNull(),
+  revisadoEn: timestamp("revisado_en", { withTimezone: true }),
+  creadoEn: timestamp("creado_en", { withTimezone: true }).defaultNow(),
+});
+
 export const fotosMotivacionales = pgTable("fotos_motivacionales", {
   id: uuid("id").primaryKey().defaultRandom(),
   hogarId: uuid("hogar_id")
@@ -420,6 +451,7 @@ export const hogarRelations = relations(hogar, ({ many }) => ({
   transaccionesPuntos: many(transaccionesPuntos),
   registroAuditoria: many(registroAuditoria),
   fotosMotivacionales: many(fotosMotivacionales),
+  tareasVoluntarias: many(tareasVoluntarias),
 }));
 
 export const participantesRelations = relations(
@@ -556,6 +588,24 @@ export const fotosMotivacionalesRelations = relations(
     deber: one(deberes, {
       fields: [fotosMotivacionales.deberId],
       references: [deberes.id],
+    }),
+  }),
+);
+
+export const tareasVoluntariasRelations = relations(
+  tareasVoluntarias,
+  ({ one }) => ({
+    hogar: one(hogar, {
+      fields: [tareasVoluntarias.hogarId],
+      references: [hogar.id],
+    }),
+    participante: one(participantes, {
+      fields: [tareasVoluntarias.participanteId],
+      references: [participantes.id],
+    }),
+    revisor: one(participantes, {
+      fields: [tareasVoluntarias.revisadoPor],
+      references: [participantes.id],
     }),
   }),
 );
