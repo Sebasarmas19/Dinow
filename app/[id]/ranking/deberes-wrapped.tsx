@@ -8,6 +8,10 @@ import type {
   TituloOficialWrapped,
   WrappedMensualData,
 } from "@/lib/wrapped/wrapped.service";
+import {
+  generarImagenHistoriaWrapped,
+  type ShareSceneInfo,
+} from "./wrapped-share-image";
 
 gsap.registerPlugin(useGSAP);
 
@@ -275,7 +279,8 @@ export function DeberesWrapped({ data, onClose, closeHref }: Props) {
   const [sceneIdx, setSceneIdx] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [burstKey, setBurstKey] = useState(0);
-  const [copied, setCopied] = useState(false);
+  const [sharingImage, setSharingImage] = useState(false);
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
 
   const stageRef = useRef<HTMLDivElement | null>(null);
   const tlRef = useRef<gsap.core.Timeline | null>(null);
@@ -288,14 +293,55 @@ export function DeberesWrapped({ data, onClose, closeHref }: Props) {
   const safeSceneIdx = Math.min(Math.max(0, sceneIdx), SCENES.length - 1);
   const currentScene = SCENES[safeSceneIdx];
 
+  // Bloqueo total de scroll vertical y rubber-banding en iOS Safari / Android Chrome
   useEffect(() => {
     setMounted(true);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const scrollY = window.scrollY;
+    const html = document.documentElement;
+    const body = document.body;
+
+    const prevHtmlOverflow = html.style.overflow;
+    const prevHtmlOverscroll = html.style.overscrollBehavior;
+    const prevBodyOverflow = body.style.overflow;
+    const prevBodyOverscroll = body.style.overscrollBehavior;
+    const prevBodyPosition = body.style.position;
+    const prevBodyTop = body.style.top;
+    const prevBodyWidth = body.style.width;
+
+    html.style.overflow = "hidden";
+    html.style.overscrollBehavior = "none";
+    body.style.overflow = "hidden";
+    body.style.overscrollBehavior = "none";
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+
     return () => {
-      document.body.style.overflow = prevOverflow;
+      html.style.overflow = prevHtmlOverflow;
+      html.style.overscrollBehavior = prevHtmlOverscroll;
+      body.style.overflow = prevBodyOverflow;
+      body.style.overscrollBehavior = prevBodyOverscroll;
+      body.style.position = prevBodyPosition;
+      body.style.top = prevBodyTop;
+      body.style.width = prevBodyWidth;
+      window.scrollTo(0, scrollY);
     };
   }, []);
+
+  // Prevenir arrastrar/scrollear la pantalla con el dedo en móviles
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const preventTouchScroll = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        e.preventDefault();
+      }
+    };
+    el.addEventListener("touchmove", preventTouchScroll, { passive: false });
+    return () => {
+      el.removeEventListener("touchmove", preventTouchScroll);
+    };
+  }, [mounted]);
 
   // Sincroniza barras completadas y pendientes al cambiar de escena
   useEffect(() => {
@@ -538,6 +584,11 @@ export function DeberesWrapped({ data, onClose, closeHref }: Props) {
           )
           .to(".scene-stage", { opacity: 1, duration: 3.8 });
       } else if (currentScene.id === "titulo") {
+        gsap.set(".suspense-group", {
+          autoAlpha: 1,
+          scale: 1,
+          filter: "blur(0px)",
+        });
         gsap.set(".winner-group", { autoAlpha: 0 });
         // ACTO 1: Suspenso cinemático (Tipografía kinética + anillo girando)
         tl.fromTo(
@@ -754,50 +805,71 @@ export function DeberesWrapped({ data, onClose, closeHref }: Props) {
     }
   };
 
-  const handleShare = async () => {
-    const p1 = data.podioFinal[0];
-    const p2 = data.podioFinal[1];
-    const p3 = data.podioFinal[2];
-
-    const texto = [
-      `DEBERES WRAPPED · ${data.labelMes.toUpperCase()}`,
-      `${data.hogarNombre}`,
-      ``,
-      `• ${data.pulsoHogar.puntosTotalesGenerados} pts generados`,
-      `• ${data.pulsoHogar.totalCumplimientos} deberes cumplidos`,
-      ``,
-      `TÍTULOS DEL MES:`,
-      `• Campeón: ${data.titulosOficiales.general.ganador?.nombre || "—"} (${data.titulosOficiales.general.valorFormateado})`,
-      `• Confiable: ${data.titulosOficiales.confiable.ganador?.nombre || "—"} (${data.titulosOficiales.confiable.valorFormateado})`,
-      `• Solidario: ${data.titulosOficiales.solidario.ganador?.nombre || "—"} (${data.titulosOficiales.solidario.valorFormateado})`,
-      `• Responsable: ${data.titulosOficiales.responsable.ganador?.nombre || "—"} (${data.titulosOficiales.responsable.valorFormateado})`,
-      ``,
-      `PODIO:`,
-      p1 ? `1. ${p1.nombre} (${p1.puntosTotales} pts)` : "",
-      p2 ? `2. ${p2.nombre} (${p2.puntosTotales} pts)` : "",
-      p3 ? `3. ${p3.nombre} (${p3.puntosTotales} pts)` : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
+  const handleShareCurrentStory = async () => {
+    if (sharingImage) return;
+    setIsPaused(true);
+    setSharingImage(true);
+    setShareFeedback(null);
 
     try {
-      if (navigator.share) {
-        await navigator.share({
-          title: `Deberes Wrapped · ${data.labelMes}`,
-          text: texto,
-        });
+      const shareScene: ShareSceneInfo =
+        currentScene.id === "titulo"
+          ? {
+              id: "titulo",
+              clave: currentScene.clave,
+              numero: currentScene.numero,
+              etiquetaCorto: currentScene.etiquetaCorto,
+              bg: currentScene.theme.bg,
+              accent: currentScene.theme.accent,
+              textAccent: currentScene.theme.textAccent,
+              orb1: currentScene.theme.orb1,
+              orb2: currentScene.theme.orb2,
+            }
+          : {
+              id: currentScene.id,
+              bg: currentScene.theme.bg,
+              accent: currentScene.theme.accent,
+              textAccent: currentScene.theme.textAccent,
+              orb1: currentScene.theme.orb1,
+              orb2: currentScene.theme.orb2,
+            };
+
+      const file = await generarImagenHistoriaWrapped(data, shareScene);
+      if (!file) {
+        setSharingImage(false);
         return;
       }
-    } catch {
-      // Fallback a portapapeles
-    }
 
-    try {
-      await navigator.clipboard.writeText(texto);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2400);
+      // 1. Compartir archivo PNG directamente en móvil (iOS Safari / Android Chrome)
+      if (
+        typeof navigator !== "undefined" &&
+        typeof navigator.canShare === "function" &&
+        navigator.canShare({ files: [file] })
+      ) {
+        await navigator.share({
+          files: [file],
+          title: `Deberes Wrapped · ${data.labelMes}`,
+        });
+        setSharingImage(false);
+        return;
+      }
+
+      // 2. Fallback: descargar la imagen PNG de la historia directamente
+      const url = URL.createObjectURL(file);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+
+      setShareFeedback("Imagen guardada");
+      setTimeout(() => setShareFeedback(null), 2600);
     } catch {
-      // ignore
+      // Si el usuario cancela la hoja nativa de compartir, no mostramos error
+    } finally {
+      setSharingImage(false);
     }
   };
 
@@ -810,8 +882,8 @@ export function DeberesWrapped({ data, onClose, closeHref }: Props) {
       ref={stageRef}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
-      style={{ backgroundColor: theme.bg }}
-      className="fixed inset-0 z-[99999] w-screen h-dvh overflow-hidden select-none text-[#FFFDF9] flex flex-col justify-between transition-colors duration-700"
+      style={{ backgroundColor: theme.bg, touchAction: "none" }}
+      className="fixed inset-0 z-[99999] w-screen h-dvh overflow-hidden overscroll-none touch-none select-none text-[#FFFDF9] flex flex-col justify-between transition-colors duration-700"
       role="dialog"
       aria-modal="true"
       aria-label={`Deberes Wrapped ${data.labelMes}`}
@@ -876,7 +948,7 @@ export function DeberesWrapped({ data, onClose, closeHref }: Props) {
       </div>
 
       {/* ── BARRA SUPERIOR DE PROGRESO (Sincronizada al frame de GSAP) ───── */}
-      <header className="relative z-40 w-full max-w-[560px] mx-auto pt-[max(14px,env(safe-area-inset-top))] px-5 flex flex-col gap-3">
+      <header className="relative z-40 w-full max-w-[560px] mx-auto pt-[max(12px,env(safe-area-inset-top))] px-5 flex flex-col gap-2.5 shrink-0">
         <div className="grid grid-cols-8 gap-1.5">
           {SCENES.map((s, idx) => (
             <button
@@ -950,7 +1022,7 @@ export function DeberesWrapped({ data, onClose, closeHref }: Props) {
       </header>
 
       {/* ── ESCENARIO CENTRAL CINEMÁTICO (100% Viewport) ─────────────────── */}
-      <main className="scene-stage relative z-20 flex-1 w-full max-w-[540px] mx-auto px-6 flex flex-col justify-center overflow-hidden">
+      <main className="scene-stage relative z-20 flex-1 min-h-0 w-full max-w-[540px] mx-auto px-5 flex flex-col justify-center overflow-hidden">
         {currentScene.id === "intro" && (
           <SceneIntro data={data} theme={theme} />
         )}
@@ -965,6 +1037,7 @@ export function DeberesWrapped({ data, onClose, closeHref }: Props) {
 
         {currentScene.id === "titulo" && (
           <SceneTitulo
+            key={currentScene.clave}
             titulo={data.titulosOficiales[currentScene.clave]}
             numero={currentScene.numero}
             pregunta={currentScene.pregunta}
@@ -977,8 +1050,9 @@ export function DeberesWrapped({ data, onClose, closeHref }: Props) {
           <ScenePodio
             data={data}
             theme={theme}
-            copied={copied}
-            onShare={handleShare}
+            sharingImage={sharingImage}
+            shareFeedback={shareFeedback}
+            onShare={handleShareCurrentStory}
             onReplay={() => {
               setSceneIdx(0);
               setIsPaused(false);
@@ -989,12 +1063,43 @@ export function DeberesWrapped({ data, onClose, closeHref }: Props) {
         )}
       </main>
 
-      {/* Pie mínimo sin saturar */}
-      <div className="relative z-20 pb-[max(14px,env(safe-area-inset-bottom))] px-6 text-center">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/30">
-          {sceneIdx + 1} / {SCENES.length}
+      {/* ── PIE CON BOTÓN PARA COMPARTIR IMAGEN DE CADA HISTORIA ─────────── */}
+      <footer className="relative z-40 w-full max-w-[540px] mx-auto pb-[max(12px,env(safe-area-inset-bottom))] px-5 flex items-center justify-between shrink-0">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/35">
+          {safeSceneIdx + 1} / {SCENES.length}
         </span>
-      </div>
+
+        {currentScene.id !== "podio" && (
+          <button
+            type="button"
+            disabled={sharingImage}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleShareCurrentStory();
+            }}
+            className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/18 border border-white/15 text-[11px] font-bold text-white/90 flex items-center gap-1.5 active:scale-95 transition-transform cursor-pointer disabled:opacity-60"
+          >
+            <svg
+              className="size-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+              <polyline points="16 6 12 2 8 6" />
+              <line x1="12" y1="2" x2="12" y2="15" />
+            </svg>
+            <span>
+              {sharingImage
+                ? "Generando..."
+                : shareFeedback || "Compartir historia"}
+            </span>
+          </button>
+        )}
+      </footer>
     </div>
   );
 
@@ -1080,7 +1185,7 @@ function ScenePulso({
   const pExtras = Math.max(0, 100 - pPropios - pAyudas);
 
   return (
-    <div className="relative min-h-[420px] flex flex-col justify-center">
+    <div className="relative min-h-[min(420px,60dvh)] flex flex-col justify-center">
       {/* ACTO 1: Tipografía cinética que entra y desaparece */}
       <div className="act1-group absolute inset-0 flex flex-col justify-center gap-2">
         <div className="overflow-hidden">
@@ -1174,7 +1279,7 @@ function SceneHitos({
   const { pulsoHogar, hitosCuriosos } = data;
 
   return (
-    <div className="relative min-h-[420px] flex flex-col justify-center">
+    <div className="relative min-h-[min(420px,60dvh)] flex flex-col justify-center">
       {/* ACTO 1: La tarea que movió la casa */}
       <div className="hito1-group absolute inset-0 flex flex-col justify-center gap-4">
         <span
@@ -1275,7 +1380,7 @@ function SceneTitulo({
   );
 
   return (
-    <div className="relative min-h-[460px] flex flex-col justify-center">
+    <div className="relative min-h-[min(460px,64dvh)] flex flex-col justify-center">
       {/* ACTO 1: SUSPENSO KINÉTICO */}
       <div className="suspense-group absolute inset-0 flex flex-col justify-center items-start gap-5">
         <div
@@ -1307,7 +1412,7 @@ function SceneTitulo({
       </div>
 
       {/* ACTO 2: REVELACIÓN DEL GANADOR + DATOS CLAVE */}
-      <div className="winner-group invisible flex flex-col gap-6">
+      <div className="winner-group invisible flex flex-col gap-[clamp(12px,2.4dvh,24px)]">
         <div className="flex items-center justify-between">
           <span
             style={{ color: theme.textAccent }}
@@ -1339,7 +1444,7 @@ function SceneTitulo({
                     key={g.participanteId}
                     nombre={g.nombre}
                     fotoUrl={g.fotoUrl}
-                    size={titulo.empatados.length > 1 ? "lg" : "xl"}
+                    size={titulo.empatados.length > 1 ? "md" : "lg"}
                     accentColor={theme.accent}
                   />
                 ))}
@@ -1374,7 +1479,7 @@ function SceneTitulo({
                 <div
                   key={i}
                   style={{ backgroundColor: "rgba(255,255,255,0.06)" }}
-                  className="winner-reason rounded-2xl p-4 border border-white/10 flex flex-col justify-between gap-1"
+                  className="winner-reason rounded-2xl p-3 border border-white/10 flex flex-col justify-between gap-1"
                 >
                   <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/55">
                     {b.etiqueta}
@@ -1441,7 +1546,8 @@ function SceneTitulo({
 function ScenePodio({
   data,
   theme,
-  copied,
+  sharingImage,
+  shareFeedback,
   onShare,
   onReplay,
   onClose,
@@ -1449,7 +1555,8 @@ function ScenePodio({
 }: {
   data: WrappedMensualData;
   theme: SceneTheme;
-  copied: boolean;
+  sharingImage: boolean;
+  shareFeedback: string | null;
   onShare: () => void;
   onReplay: () => void;
   onClose?: () => void;
@@ -1459,27 +1566,28 @@ function ScenePodio({
   const p2 = data.podioFinal[1];
   const p3 = data.podioFinal[2];
 
-  const renderPilar = (
-    p: typeof p1 | undefined,
-    rank: 1 | 2 | 3,
-    heightClass: string,
-  ) => {
+  // Altura del pilar según la posición REAL (si hay empate, comparten altura)
+  const alturaPorPosicion = (pos: number) =>
+    pos === 1 ? "h-[clamp(52px,10dvh,84px)]" : pos === 2 ? "h-[clamp(38px,7dvh,62px)]" : "h-[clamp(26px,5dvh,44px)]";
+
+  const renderPilar = (p: typeof p1 | undefined) => {
     if (!p) return <div className="flex-1" />;
-    const isFirst = rank === 1;
+    const pos = p.posicionGeneral;
+    const isFirst = pos === 1;
     return (
       <div className="podio-col flex-1 flex flex-col items-center min-w-0">
         <AvatarCircle
           nombre={p.nombre}
           fotoUrl={p.fotoUrl}
-          size={isFirst ? "lg" : "md"}
+          size={isFirst ? "md" : "sm"}
           accentColor={isFirst ? "#F6D582" : "rgba(255,255,255,0.35)"}
         />
-        <span className="font-display text-sm font-extrabold text-white mt-2 truncate w-full text-center">
+        <span className="font-display text-[13px] font-extrabold text-white mt-1.5 truncate w-full text-center leading-tight">
           {p.nombre}
         </span>
         <span
           style={{ color: isFirst ? theme.textAccent : "rgba(255,255,255,0.6)" }}
-          className="font-display text-xs font-bold mb-2"
+          className="font-display text-[11px] font-bold mb-1.5"
         >
           {p.puntosTotales} pts
         </span>
@@ -1490,97 +1598,97 @@ function ScenePodio({
               : "rgba(255,255,255,0.1)",
             color: isFirst ? "#1F1400" : "#FFFDF9",
           }}
-          className={`w-full ${heightClass} rounded-t-2xl flex items-center justify-center font-display text-2xl font-extrabold`}
+          className={`w-full ${alturaPorPosicion(pos)} rounded-t-xl flex items-center justify-center font-display text-xl font-extrabold`}
         >
-          {rank}º
+          {pos}º
         </div>
       </div>
     );
   };
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-[clamp(10px,2dvh,18px)]">
       <div className="podio-header">
         <span
           style={{ color: theme.textAccent }}
-          className="text-xs font-extrabold uppercase tracking-[0.24em]"
+          className="text-[11px] font-extrabold uppercase tracking-[0.24em]"
         >
-          PODIO OFICIAL · {data.labelMes}
+          PODIO · {data.labelMes}
         </span>
-        <h2 className="font-display text-3xl font-extrabold text-white tracking-tight mt-0.5">
+        <h2 className="font-display text-[clamp(1.5rem,6.5vw,2rem)] font-extrabold text-white tracking-tight leading-tight">
           Cuadro de Honor
         </h2>
       </div>
 
-      {/* Podio de 3 columnas */}
-      <div className="flex items-end gap-3 pt-2">
-        {renderPilar(p2, 2, "h-20")}
-        {renderPilar(p1, 1, "h-28")}
-        {renderPilar(p3, 3, "h-14")}
+      {/* Podio de 3 columnas (2º · 1º · 3º) */}
+      <div className="flex items-end gap-2.5">
+        {renderPilar(p2)}
+        {renderPilar(p1)}
+        {renderPilar(p3)}
       </div>
 
-      {/* Títulos por participante */}
-      <div className="flex flex-col gap-2">
+      {/* Títulos por participante (filas compactas) */}
+      <div className="flex flex-col gap-1.5">
         {data.podioFinal.map((p) => (
           <div
             key={p.participanteId}
-            className="podio-row rounded-2xl bg-white/6 border border-white/10 px-4 py-3 flex items-center justify-between gap-3"
+            className="podio-row rounded-xl bg-white/6 border border-white/10 px-3.5 py-2 flex items-center justify-between gap-3"
           >
-            <div className="min-w-0">
-              <div className="font-display text-sm font-extrabold text-white">
+            <div className="min-w-0 flex items-center gap-2 flex-wrap">
+              <span className="font-display text-[13px] font-extrabold text-white">
                 {p.nombre}
-              </div>
-              <div className="flex flex-wrap gap-1.5 mt-1">
-                {p.titulosGanados.length > 0 ? (
-                  p.titulosGanados.map((t) => (
-                    <span
-                      key={t.clave}
-                      style={{
-                        backgroundColor: theme.accentSoft,
-                        color: theme.textAccent,
-                      }}
-                      className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md"
-                    >
-                      {t.nombre}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-xs text-white/55">
-                    {p.porcentajeConfiable}% cumplimiento · {p.cumplidosPropios}{" "}
-                    deberes
+              </span>
+              {p.titulosGanados.length > 0 ? (
+                p.titulosGanados.map((t) => (
+                  <span
+                    key={t.clave}
+                    style={{
+                      backgroundColor: theme.accentSoft,
+                      color: theme.textAccent,
+                    }}
+                    className="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                  >
+                    {t.nombre}
                   </span>
-                )}
-              </div>
+                ))
+              ) : (
+                <span className="text-[11px] text-white/55">
+                  {p.porcentajeConfiable}% cumplido
+                </span>
+              )}
             </div>
-            <span className="font-display text-base font-extrabold text-white shrink-0">
-              {p.puntosTotales} pts
+            <span className="font-display text-sm font-extrabold text-white shrink-0">
+              {p.puntosTotales}
             </span>
           </div>
         ))}
       </div>
 
-      {/* Botones de cierre */}
-      <div className="podio-actions flex flex-col gap-2.5 pt-1">
+      {/* Botones de cierre: siempre visibles en pantallas de teléfono */}
+      <div className="podio-actions flex flex-col gap-2">
         <button
           type="button"
+          disabled={sharingImage}
           onClick={(e) => {
             e.stopPropagation();
             onShare();
           }}
           style={{ backgroundColor: "#E2733F" }}
-          className="w-full py-3.5 rounded-2xl font-display font-extrabold text-sm text-white tracking-tight active:scale-[0.98] transition-transform cursor-pointer"
+          className="w-full py-3 rounded-xl font-display font-extrabold text-sm text-white tracking-tight active:scale-[0.98] transition-transform cursor-pointer disabled:opacity-70"
         >
-          {copied ? "Copiado al portapapeles" : "Compartir Resumen"}
+          {sharingImage
+            ? "Generando imagen..."
+            : shareFeedback || "Compartir imagen del podio"}
         </button>
 
-        <div className="grid grid-cols-2 gap-2.5">
+        <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               onReplay();
             }}
-            className="py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-xs font-bold text-white active:scale-[0.98] transition-transform cursor-pointer"
+            className="py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-bold text-white active:scale-[0.98] transition-transform cursor-pointer"
           >
             Repetir
           </button>
@@ -1592,7 +1700,7 @@ function ScenePodio({
                 e.stopPropagation();
                 onClose();
               }}
-              className="py-3 rounded-2xl bg-white/15 hover:bg-white/20 text-xs font-bold text-[#FCEBB6] active:scale-[0.98] transition-transform cursor-pointer"
+              className="py-2.5 rounded-xl bg-white/15 hover:bg-white/20 text-xs font-bold text-[#FCEBB6] active:scale-[0.98] transition-transform cursor-pointer"
             >
               Salir
             </button>
@@ -1600,7 +1708,7 @@ function ScenePodio({
             <a
               href={closeHref}
               onClick={(e) => e.stopPropagation()}
-              className="py-3 rounded-2xl bg-white/15 hover:bg-white/20 text-xs font-bold text-[#FCEBB6] active:scale-[0.98] transition-transform text-center"
+              className="py-2.5 rounded-xl bg-white/15 hover:bg-white/20 text-xs font-bold text-[#FCEBB6] active:scale-[0.98] transition-transform text-center"
             >
               Salir
             </a>
