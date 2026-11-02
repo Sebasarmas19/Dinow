@@ -35,6 +35,7 @@ export default async function UsuarioHome({ params }: Props) {
         deberManana={data.deberManana}
         intercambiosPendientes={data.intercambiosPendientes}
         bonoAyuda={data.bonoAyuda}
+        tareasVoluntarias={data.tareasVoluntarias}
       />
     );
   } catch {

@@ -171,15 +171,15 @@ export function HomeScreen({
     number | null
   >(null);
   const [modalVoluntariaAbierto, setModalVoluntariaAbierto] = useState(false);
-  const [misTareasVoluntarias, setMisTareasVoluntarias] = useState<TareaVoluntariaUI[]>(
-    tareasVoluntarias || []
-  );
+  const [tareasVoluntariasLocales, setTareasVoluntariasLocales] = useState<TareaVoluntariaUI[]>([]);
 
-  useEffect(() => {
-    if (tareasVoluntarias) {
-      setMisTareasVoluntarias(tareasVoluntarias);
-    }
-  }, [tareasVoluntarias]);
+  // Consolidamos las tareas voluntarias del servidor con las creadas localmente en esta sesión
+  const misTareasVoluntarias = [
+    ...tareasVoluntariasLocales,
+    ...tareasVoluntarias.filter(
+      (t) => !tareasVoluntariasLocales.some((l) => l.id === t.id)
+    ),
+  ];
 
   const todosMisDeberesCumplidos =
     deberesHoy.length > 0 && deberesHoy.every((d) => d.cumplido);
@@ -898,7 +898,7 @@ export function HomeScreen({
         onClose={() => setModalVoluntariaAbierto(false)}
         participanteId={miId}
         onSuccess={(nuevaTarea) => {
-          setMisTareasVoluntarias((prev) => [nuevaTarea, ...prev]);
+          setTareasVoluntariasLocales((prev) => [nuevaTarea, ...prev]);
           router.refresh();
         }}
       />
