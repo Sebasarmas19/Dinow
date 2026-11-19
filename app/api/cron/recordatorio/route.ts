@@ -132,6 +132,7 @@ export async function GET(request: Request) {
           participanteId: participantes.id,
           deberNombre: deberes.nombre,
           esPersonal: deberes.esPersonal,
+          esObligatorio: deberes.esObligatorio,
         })
         .from(asignaciones)
         .innerJoin(deberes, eq(asignaciones.deberId, deberes.id))
@@ -148,15 +149,19 @@ export async function GET(request: Request) {
         );
 
       for (const sub of suscripcionesValidas) {
-        const suAsignacion = asignacionesHoy.find(
-          (a) => a.participanteId === sub.participanteId && !a.esPersonal
-        );
+        const susFijos = asignacionesHoy
+          .filter((a) => a.participanteId === sub.participanteId && !a.esPersonal)
+          .sort((a, b) => Number(b.esObligatorio) - Number(a.esObligatorio));
+        const suAsignacion = susFijos[0];
         if (suAsignacion) {
+          const extrasFijos = susFijos.slice(1).map((a) => a.deberNombre);
+          const extraTexto =
+            extrasFijos.length > 0 ? ` (y en la noche: ${extrasFijos.join(", ")})` : "";
           envios.push(
             enviarPush(
               sub,
               `¡Buenos días, ${suAsignacion.participanteNombre}! ☀️`,
-              `Hoy tu misión principal es: ${suAsignacion.deberNombre}. ¡Que tengas un excelente día!`,
+              `Hoy tu misión principal es: ${suAsignacion.deberNombre}${extraTexto}. ¡Que tengas un excelente día!`,
               `/${sub.participanteId}`
             )
           );
@@ -303,6 +308,8 @@ export async function GET(request: Request) {
               and(
                 eq(planSemanal.participanteId, sub.participanteId),
                 eq(planSemanal.diaSemana, diaMananaInt),
+                // El deber principal (no negociable), no "Meter la losa".
+                eq(deberes.esObligatorio, true),
                 eq(deberes.activo, true)
               )
             );
@@ -427,7 +434,10 @@ export async function GET(request: Request) {
         .where(
           and(
             eq(asignaciones.fecha, fechaHoyStr),
-            eq(deberes.esObligatorio, true),
+            // Todos los deberes fijos (incluida "Meter la losa"), no solo los
+            // no negociables: el aviso es personal y sirve para no olvidar marcar.
+            eq(deberes.tipoAsignacion, "rotativo"),
+            eq(deberes.esPersonal, false),
             eq(deberes.activo, true)
           )
         );

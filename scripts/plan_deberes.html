@@ -194,7 +194,7 @@
     /* CHORES DEFINITIONS */
     .chores-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 10px;
       margin-bottom: 12px;
     }
@@ -218,6 +218,7 @@
     .chore-sofi .chore-title { color: #d97706; }
     .chore-cocina .chore-title { color: #ea580c; }
     .chore-lavar .chore-title { color: #2563eb; }
+    .chore-losa .chore-title { color: #0d9488; }
 
     .chore-list {
       list-style: none;
@@ -430,16 +431,16 @@
     <!-- KPIs -->
     <div class="kpi-grid">
       <div class="kpi-card">
-        <div class="kpi-val">21</div>
+        <div class="kpi-val">28</div>
         <div class="kpi-label">Deberes Semanales</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-val">7 / 7 / 7</div>
-        <div class="kpi-label">Equidad Exacta</div>
+        <div class="kpi-val">10 / 9 / 9</div>
+        <div class="kpi-label">Seb / Sil / Sam</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-val">3</div>
-        <div class="kpi-label">Obligaciones Diarias</div>
+        <div class="kpi-val">3 + 1</div>
+        <div class="kpi-label">Fijos Diarios (+ Losa)</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-val">03:00 AM</div>
@@ -497,7 +498,7 @@
     </div>
 
     <!-- DEFINICIÓN DE DEBERES -->
-    <div class="section-title">2. Criterios de las 3 Obligaciones Fijas Diarias</div>
+    <div class="section-title">2. Criterios de los 4 Deberes Fijos Diarios</div>
     <div class="chores-grid">
       <div class="chore-card chore-sofi">
         <div class="chore-title">🐾 Sofi (Cuidado Canino)</div>
@@ -524,8 +525,18 @@
         <ul class="chore-list">
           <li><strong>Limpieza total:</strong> Lavar todos los platos, vasos y potes traídos de la uni/trabajo.</li>
           <li><strong>Ollas y sartenes:</strong> Fregar todo lo utilizado por la persona de Cocina.</li>
-          <li><strong>Cierre de noche:</strong> Fregadero y escurridor 100% limpios y ordenados antes de dormir.</li>
+          <li><strong>Cierre de noche:</strong> Fregadero y mesón limpios antes de dormir.</li>
           <li><em>Sin excepciones:</em> No se dejan platos sucios para el día siguiente.</li>
+        </ul>
+      </div>
+
+      <div class="chore-card chore-losa">
+        <div class="chore-title">🧺 Meter la losa (5 pts)</div>
+        <ul class="chore-list">
+          <li><strong>Secar:</strong> Todo lo que se lavó en el día.</li>
+          <li><strong>Guardar:</strong> Cada cosa en su lugar y escurridor vacío.</li>
+          <li><strong>Basura:</strong> Sacar y botar la basura del día, bolsa nueva.</li>
+          <li><em>Regla:</em> La hace quien tiene a Sofi, en la noche, después de lavar. Negociable: si nadie lavó, no se penaliza.</li>
         </ul>
       </div>
     </div>
@@ -566,6 +577,7 @@
             <th>🐾 Sofi (Paseos y Cuidados)</th>
             <th>🍳 Cocina (Almuerzo y Cena)</th>
             <th>🍽️ Lavar (Platos del Día)</th>
+            <th>🧺 Meter la losa</th>
           </tr>
         </thead>
         <tbody>
@@ -574,42 +586,49 @@
             <td><span class="tag-sibling tag-silvana">Silvana</span></td>
             <td><span class="tag-sibling tag-samuel">Samuel</span></td>
             <td><span class="tag-sibling tag-sebas">Sebastián</span></td>
+            <td><span class="tag-sibling tag-silvana">Silvana</span></td>
           </tr>
           <tr>
             <td><span class="day-badge">MARTES</span></td>
             <td><span class="tag-sibling tag-sebas">Sebastián</span></td>
             <td><span class="tag-sibling tag-silvana">Silvana</span></td>
             <td><span class="tag-sibling tag-samuel">Samuel</span></td>
+            <td><span class="tag-sibling tag-sebas">Sebastián</span></td>
           </tr>
           <tr>
             <td><span class="day-badge">MIÉRCOLES</span></td>
             <td><span class="tag-sibling tag-sebas">Sebastián</span></td>
             <td><span class="tag-sibling tag-samuel">Samuel</span></td>
             <td><span class="tag-sibling tag-silvana">Silvana</span></td>
+            <td><span class="tag-sibling tag-sebas">Sebastián</span></td>
           </tr>
           <tr>
             <td><span class="day-badge">JUEVES</span></td>
             <td><span class="tag-sibling tag-silvana">Silvana</span></td>
             <td><span class="tag-sibling tag-sebas">Sebastián</span></td>
             <td><span class="tag-sibling tag-samuel">Samuel</span></td>
+            <td><span class="tag-sibling tag-silvana">Silvana</span></td>
           </tr>
           <tr style="background: #fffbeb;">
             <td><span class="day-badge" style="color: #b45309;">VIERNES ⭐</span></td>
             <td><span class="tag-sibling tag-samuel">Samuel</span></td>
             <td><span class="tag-sibling tag-silvana">Silvana</span></td>
             <td><span class="tag-sibling tag-sebas">Sebastián</span></td>
+            <td><span class="tag-sibling tag-samuel">Samuel</span></td>
           </tr>
           <tr>
             <td><span class="day-badge">SÁBADO</span></td>
             <td><span class="tag-sibling tag-sebas">Sebastián</span></td>
             <td><span class="tag-sibling tag-samuel">Samuel</span></td>
             <td><span class="tag-sibling tag-silvana">Silvana</span></td>
+            <td><span class="tag-sibling tag-sebas">Sebastián</span></td>
           </tr>
           <tr>
             <td><span class="day-badge">DOMINGO</span></td>
             <td><span class="tag-sibling tag-samuel">Samuel</span></td>
             <td><span class="tag-sibling tag-sebas">Sebastián</span></td>
             <td><span class="tag-sibling tag-silvana">Silvana</span></td>
+            <td><span class="tag-sibling tag-samuel">Samuel</span></td>
           </tr>
         </tbody>
       </table>
@@ -621,34 +640,37 @@
       <div class="balance-card">
         <div class="balance-header">
           <span style="color: #1e40af;">Sebastián</span>
-          <span class="tag-sibling tag-sebas">7 Tareas</span>
+          <span class="tag-sibling tag-sebas">10 Tareas</span>
         </div>
         <div class="balance-row"><span>🐾 Sofi:</span> <strong>3 (Mar, Mié, Sáb)</strong></div>
         <div class="balance-row"><span>🍳 Cocina:</span> <strong>2 (Jue, Dom)</strong></div>
         <div class="balance-row"><span>🍽️ Lavar:</span> <strong>2 (Lun, Vie)</strong></div>
-        <div class="balance-row"><span>Total Semanal:</span> <strong>7 Deberes (33.3%)</strong></div>
+        <div class="balance-row"><span>🧺 Losa:</span> <strong>3 (Mar, Mié, Sáb)</strong></div>
+        <div class="balance-row"><span>Total Semanal:</span> <strong>10 Deberes (35.7%)</strong></div>
       </div>
 
       <div class="balance-card">
         <div class="balance-header">
           <span style="color: #9d174d;">Silvana</span>
-          <span class="tag-sibling tag-silvana">7 Tareas</span>
+          <span class="tag-sibling tag-silvana">9 Tareas</span>
         </div>
         <div class="balance-row"><span>🐾 Sofi:</span> <strong>2 (Lun, Jue)</strong></div>
         <div class="balance-row"><span>🍳 Cocina:</span> <strong>2 (Mar, Vie)</strong></div>
         <div class="balance-row"><span>🍽️ Lavar:</span> <strong>3 (Mié, Sáb, Dom)</strong></div>
-        <div class="balance-row"><span>Total Semanal:</span> <strong>7 Deberes (33.3%)</strong></div>
+        <div class="balance-row"><span>🧺 Losa:</span> <strong>2 (Lun, Jue)</strong></div>
+        <div class="balance-row"><span>Total Semanal:</span> <strong>9 Deberes (32.1%)</strong></div>
       </div>
 
       <div class="balance-card">
         <div class="balance-header">
           <span style="color: #166534;">Samuel</span>
-          <span class="tag-sibling tag-samuel">7 Tareas</span>
+          <span class="tag-sibling tag-samuel">9 Tareas</span>
         </div>
         <div class="balance-row"><span>🐾 Sofi:</span> <strong>2 (Vie, Dom)</strong></div>
         <div class="balance-row"><span>🍳 Cocina:</span> <strong>3 (Lun, Mié, Sáb)</strong></div>
         <div class="balance-row"><span>🍽️ Lavar:</span> <strong>2 (Mar, Jue)</strong></div>
-        <div class="balance-row"><span>Total Semanal:</span> <strong>7 Deberes (33.3%)</strong></div>
+        <div class="balance-row"><span>🧺 Losa:</span> <strong>2 (Vie, Dom)</strong></div>
+        <div class="balance-row"><span>Total Semanal:</span> <strong>9 Deberes (32.1%)</strong></div>
       </div>
     </div>
 
@@ -704,6 +726,7 @@
         <p><strong>🐾 Silvana:</strong> Llega con Sebas a las 6:30 PM de clases y saca a Sofi de una vez.</p>
         <p><strong>🍳 Samuel:</strong> El almuerzo ya quedó preparado el domingo en la noche; Samuel hace la cena al volver del entreno.</p>
         <p><strong>🍽️ Sebastián:</strong> Tras un día largo de clases, lava los platos de la noche antes de acostarse.</p>
+        <p><strong>🧺 Silvana:</strong> Solo tiene a Sofi y está en casa desde las 6:30 PM: seca, guarda y bota la basura.</p>
       </div>
 
       <div class="day-card">
@@ -714,6 +737,7 @@
         <p><strong>🐾 Sebastián:</strong> Entra a las 12 PM. Saca a Sofi relajado a las 9 AM y al volver a las 4:30 PM. No madruga a cocinar.</p>
         <p><strong>🍳 Silvana:</strong> Sale temprano de clases (3:00 PM). Tiene la tarde para cocinar la cena familiar.</p>
         <p><strong>🍽️ Samuel:</strong> Llega a las 8:30 PM de entrenar, cena y lava los platos.</p>
+        <p><strong>🧺 Sebastián:</strong> Es su día más suave (mañana libre): mete la losa cuando Samuel termina de lavar.</p>
       </div>
 
       <div class="day-card">
@@ -724,6 +748,7 @@
         <p><strong>🐾 Sebastián:</strong> Día libre de clases. Saca a Sofi descansado y a las 5:30 PM antes del voleibol.</p>
         <p><strong>🍳 Samuel:</strong> Cocina la cena para que cuando Sebas y Silvana lleguen del voleibol a las 9:30 PM esté lista.</p>
         <p><strong>🍽️ Silvana:</strong> Al llegar del voleibol y cenar caliente, lava los platos nocturnos.</p>
+        <p><strong>🧺 Sebastián:</strong> Sin clases todo el día: seca y guarda después del lavado de Silvana (≈10:30 PM).</p>
       </div>
 
       <div class="day-card">
@@ -734,6 +759,7 @@
         <p><strong>🐾 Silvana:</strong> Llega a casa a las 5:45 PM y saca a Sofi antes de que anochezca.</p>
         <p><strong>🍳 Sebastián:</strong> Cocina la cena del jueves y <em>deja listos los potes de almuerzo del viernes</em> para llevar.</p>
         <p><strong>🍽️ Samuel:</strong> Llega a las 8:30 PM y lava los platos utilizados en la noche.</p>
+        <p><strong>🧺 Silvana:</strong> En casa desde las 5:45 PM y con solo Sofi: mete la losa tras el lavado de Samuel.</p>
       </div>
 
       <div class="day-card highlight-friday">
@@ -744,6 +770,7 @@
         <p><strong>🐾 Samuel:</strong> Es el único en la casa a buena hora (8:30 PM o antes). Evita que Sofi se haga pipí.</p>
         <p><strong>🍳 Silvana:</strong> Almuerzo ya preparado el jueves. Silvana resuelve cena rápida a las 9:30 PM.</p>
         <p><strong>🍽️ Sebastián:</strong> Lava todos los platos acumulados de la cena y potes universitarios.</p>
+        <p><strong>🧺 Samuel:</strong> El único en casa temprano: seca y guarda cuando Sebas termina de lavar.</p>
       </div>
 
       <div class="day-card">
@@ -754,6 +781,7 @@
         <p><strong>🐾 Sebastián:</strong> Está 100% libre y atiende a Sofi con paseos prolongados.</p>
         <p><strong>🍳 Samuel:</strong> Día libre de trabajo. Cocina con calma almuerzo y cena sin apuros laborales.</p>
         <p><strong>🍽️ Silvana:</strong> Tras su clase matutina de las 10:00 AM, lava los platos del día.</p>
+        <p><strong>🧺 Sebastián:</strong> 100% libre: cierra el día secando, guardando y botando la basura.</p>
       </div>
 
       <div class="day-card" style="grid-column: span 2;">
@@ -764,6 +792,7 @@
         <p><strong>🐾 Samuel:</strong> Atiende a Sofi en su día de descanso dominical completo.</p>
         <p><strong>🍳 Sebastián:</strong> Cocina almuerzo y cena del domingo y deja adelantado el almuerzo del lunes para todos.</p>
         <p><strong>🍽️ Silvana:</strong> Cierra el ciclo semanal lavando la vajilla dominical, dejando la cocina impecable para el lunes.</p>
+        <p><strong>🧺 Samuel:</strong> En su día libre, seca, guarda y bota la basura para arrancar la semana.</p>
       </div>
     </div>
 

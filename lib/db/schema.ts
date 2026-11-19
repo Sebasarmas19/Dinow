@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   date,
@@ -165,6 +166,12 @@ export const deberes = pgTable("deberes", {
   }),
   // [NUEVO] Define si el max_reclamos es un pozo común o un cupo por participante
   limitePorPersona: boolean("limite_por_persona").notNull().default(false),
+  // Deber previo del que depende este (ej. "Meter la losa" depende de "Lavar"):
+  // si ese dia nadie hizo el deber previo, este no se penaliza en el cierre.
+  dependeDeDeberId: uuid("depende_de_deber_id").references(
+    (): AnyPgColumn => deberes.id,
+    { onDelete: "set null" },
+  ),
   activo: boolean("activo").notNull().default(true),
   creadoEn: timestamp("creado_en", { withTimezone: true }).defaultNow(),
 });

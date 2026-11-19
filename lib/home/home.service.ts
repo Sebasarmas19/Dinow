@@ -382,12 +382,21 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
     criterios: { id: string; descripcion: string; orden: number; puntos: number }[];
   }[] = [];
 
-  const miAsignacionRotativa = Array.from(deberesAgrupados.values()).find(
-    (a) =>
-      a.asignacion.participanteId === yo.id &&
-      a.deber.tipoAsignacion === "rotativo" &&
-      !a.deber.esPersonal,
-  );
+  // Rotativos fijos de una persona hoy, con el no negociable primero: con la
+  // losa, algunos días alguien tiene 2 deberes fijos y el "principal" (el que se
+  // muestra en su tarjeta, se cubre o se intercambia) es Sofi/Cocina/Lavar.
+  const rotativosFijosDe = (participanteId: string) =>
+    Array.from(deberesAgrupados.values())
+      .filter(
+        (a) =>
+          a.asignacion.participanteId === participanteId &&
+          a.deber.tipoAsignacion === "rotativo" &&
+          !a.deber.esPersonal,
+      )
+      .sort((a, b) => Number(b.deber.esObligatorio) - Number(a.deber.esObligatorio));
+
+  const misRotativosFijos = rotativosFijosDe(yo.id);
+  const miAsignacionRotativa = misRotativosFijos[0];
   const miEvaluacion = miAsignacionRotativa
     ? evaluarEstadoDeber(
         miAsignacionRotativa.deber,
@@ -396,21 +405,24 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
       )
     : null;
 
-  const yoCumpliTodoLoMio = miEvaluacion
-    ? miEvaluacion.cumplidoAlCien && miEvaluacion.propiosCount > 0
-    : true;
+  // Igual que el servidor (cumplioDeberPropioDelDia): el bono por ayudar exige
+  // haber cumplido TODOS mis deberes fijos del día, incluida la losa.
+  const yoCumpliTodoLoMio = misRotativosFijos.every((a) => {
+    const ev = evaluarEstadoDeber(a.deber, yo.id, a.criterios);
+    return ev.cumplidoAlCien && ev.propiosCount > 0;
+  });
 
   // 6. Construir lista de hermanos y extraer mis deberes
   for (const part of participantesActivos) {
     const esYo = part.id === yo.id;
 
-    const misAsignaciones = Array.from(deberesAgrupados.values()).filter(
+    const misRotativos = rotativosFijosDe(part.id);
+    const misPersonales = Array.from(deberesAgrupados.values()).filter(
       (a) =>
         a.asignacion.participanteId === part.id &&
-        a.deber.tipoAsignacion === "rotativo",
+        a.deber.tipoAsignacion === "rotativo" &&
+        a.deber.esPersonal,
     );
-    const misRotativos = misAsignaciones.filter((a) => !a.deber.esPersonal);
-    const misPersonales = misAsignaciones.filter((a) => a.deber.esPersonal);
 
     const asignacionPrincipal = misRotativos[0];
     const evalPrincipal = asignacionPrincipal
@@ -757,6 +769,8 @@ export async function getHomeScreenData(usuarioId?: string): Promise<HomeScreenP
           eq(planSemanalTable.hogarId, hogarActual.id),
           eq(planSemanalTable.participanteId, yo.id),
           eq(planSemanalTable.diaSemana, diaMananaInt),
+          // El deber principal (no negociable), no "Meter la losa".
+          eq(deberes.esObligatorio, true),
           eq(deberes.activo, true),
         ),
       );

@@ -31,6 +31,11 @@ import {
  *    (F === 0) → 0 penalización (deber compartido 100% cumplido).
  * 4. Si en un deber NO NEGOCIABLE quedaron F > 0 criterios sin hacer por nadie →
  *    penalización colectiva proporcional a los tres hermanos.
+ * 5. Un deber fijo negociable (es_obligatorio = false, ej. "Meter la losa") nunca
+ *    genera penalización colectiva, y su penalización individual tiene como tope
+ *    sus propios puntos (la losa arriesga 5, no 15).
+ * 6. Un deber con `depende_de_deber_id` no se penaliza si ese día nadie hizo
+ *    nada del deber previo (no se puede meter la losa si no se lavó).
  */
 
 export type ResultadoCierre = {
@@ -76,6 +81,27 @@ export async function cerrarDia(
     // Los deberes personales son extras individuales sin penalización
     if (deber.esPersonal) continue;
 
+    // Deber dependiente (ej. "Meter la losa" depende de "Lavar"): si ese día
+    // nadie hizo NADA del deber previo, no había qué secar/guardar, así que
+    // este deber no se penaliza.
+    if (
+      deber.dependeDeDeberId &&
+      !registrosDelDia.some(
+        (r) =>
+          r.deberId === deber.dependeDeDeberId &&
+          (r.estado === "cumplido_propio" || r.estado === "cubrio_a_otro"),
+      )
+    ) {
+      continue;
+    }
+
+    // Tope de la penalización individual: un deber fijo NO negociable usa la
+    // penalización completa del hogar; uno negociable (ej. la losa, 5 pts)
+    // solo arriesga sus propios puntos.
+    const penalizacionFalloDeber = deber.esObligatorio
+      ? penalizacionFallo
+      : Math.min(penalizacionFallo, Number(deber.puntos));
+
     const { efectivos: criteriosDeberActual } =
       await obtenerCriteriosEfectivosDeDeber(
         hogarId,
@@ -108,7 +134,7 @@ export async function cerrarDia(
           hogarId,
           asignacion.participanteId,
           fechaStr,
-          penalizacionFallo,
+          penalizacionFalloDeber,
         );
         aplicadas++;
       }
@@ -197,7 +223,8 @@ export async function cerrarDia(
     //   recibe la penalización proporcional al peso de los criterios faltantes.
     if (!ausentes.has(asignacion.participanteId)) {
       const fraccionFallo = kPropio === 0 ? 1 : fraccionFaltante;
-      const montoPenalizacion = Math.round(penalizacionFallo * fraccionFallo * 100) / 100;
+      const montoPenalizacion =
+        Math.round(penalizacionFalloDeber * fraccionFallo * 100) / 100;
       if (montoPenalizacion > 0) {
         await otorgarPenalizacionFallo(
           hogarId,

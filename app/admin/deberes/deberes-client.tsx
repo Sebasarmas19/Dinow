@@ -51,8 +51,12 @@ export function DeberesClient({
     (state, updater: (d: DeberConCriterios[]) => DeberConCriterios[]) => updater(state),
   );
 
-  const deberesObligatorios = deberesOpt.filter((d) => d.esObligatorio);
-  const deberesExtras = deberesOpt.filter((d) => !d.esObligatorio && !d.esPersonal);
+  // Pestaña "Fijos": los deberes rotativos del plan semanal, sean no negociables
+  // (Sofi, Cocina, Lavar) o negociables (Meter la losa).
+  const esFijo = (d: DeberConCriterios) =>
+    !d.esPersonal && (d.esObligatorio || d.tipoAsignacion === "rotativo");
+  const deberesObligatorios = deberesOpt.filter(esFijo);
+  const deberesExtras = deberesOpt.filter((d) => !d.esPersonal && !esFijo(d));
   const deberesPersonales = deberesOpt.filter((d) => !d.esObligatorio && d.esPersonal);
 
   const listActiva =
@@ -180,7 +184,12 @@ export function DeberesClient({
     }
 
     if (activeTab === "obligatorios") {
-      formData.set("esObligatorio", "true");
+      // Al editar se conserva si era no negociable o no (la losa sigue siendo
+      // negociable); un fijo nuevo nace no negociable.
+      formData.set(
+        "esObligatorio",
+        deberEditando ? String(deberEditando.esObligatorio) : "true",
+      );
       formData.set("tipoAsignacion", "rotativo");
       formData.set("esPersonal", "false");
     } else if (activeTab === "extras") {
@@ -263,7 +272,7 @@ export function DeberesClient({
           }`}
         >
           <span className="shrink-0">🔒</span>
-          <span>Obligatorios</span>
+          <span>Fijos</span>
         </button>
         <button
           onClick={() => setActiveTab("extras")}
@@ -293,13 +302,13 @@ export function DeberesClient({
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-[#3b2a1a]">
-            {activeTab === "obligatorios" && "Deberes Obligatorios"}
+            {activeTab === "obligatorios" && "Deberes Fijos"}
             {activeTab === "extras" && "Deberes Extras"}
             {activeTab === "personales" && "Extras Personales"}
           </h2>
           <p className="text-sm text-[#735e47]">
             {activeTab === "obligatorios" &&
-              "Son rotativos y críticos. Cada criterio tiene su propio peso en puntos."}
+              "Rotan según el plan semanal. 🔒 No negociable = penalización colectiva si nadie lo hace."}
             {activeTab === "extras" &&
               "Comunitarios reclamables. Suma puntos extra."}
             {activeTab === "personales" &&
@@ -351,6 +360,16 @@ export function DeberesClient({
                           : "Cualquiera"}
                     </span>
                   </div>
+                  {activeTab === "obligatorios" && (
+                    <div className="flex items-center text-xs text-[#735e47]">
+                      <span className="w-24 font-semibold">Tipo:</span>
+                      <span className="font-medium text-[#3b2a1a]">
+                        {deber.esObligatorio
+                          ? "🔒 No negociable"
+                          : "Negociable (solo arriesga sus puntos)"}
+                      </span>
+                    </div>
+                  )}
                   {activeTab !== "obligatorios" && (
                     <div className="flex items-center text-xs text-[#735e47]">
                       <span className="w-24 font-semibold">Frecuencia:</span>
@@ -469,9 +488,9 @@ export function DeberesClient({
 
                 {activeTab === "obligatorios" ? (
                   <div className="flex items-center justify-between rounded-xl border border-black/5 bg-[#faf8f5] px-4 py-3 text-[#3b2a1a] shadow-inner">
-                    <span className="font-bold">⭐ 10 pts (Fijo obligatorio)</span>
+                    <span className="font-bold">⭐ {puntosStr} pts (Fijo)</span>
                     <span className="text-xs text-[#8c7b68]">
-                      La suma de criterios debe dar 10 pts
+                      La suma de criterios debe dar {puntosStr} pts
                     </span>
                   </div>
                 ) : (
